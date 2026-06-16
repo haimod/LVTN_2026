@@ -45,6 +45,17 @@ const getApiOrigin = () => {
 
 const apiOrigin = getApiOrigin();
 
+const getPublicAppUrl = () => {
+  const configuredUrl = import.meta.env.VITE_PUBLIC_APP_URL || import.meta.env.VITE_APP_PUBLIC_URL;
+  if (configuredUrl) {
+    return configuredUrl.replace(/\/+$/, '');
+  }
+
+  return window.location.origin;
+};
+
+const publicAppUrl = getPublicAppUrl();
+
 const getCurrentUser = () => {
   try {
     const user = localStorage.getItem('user');
@@ -414,7 +425,7 @@ const AssetList = () => {
   const modalLocation = editingAsset?.department?.name || 'Kho tổng';
   const existingImageUrl = getImageUrl(editingAsset?.image_path);
   const qrValue = qrAsset?.uuid
-    ? `${window.location.origin}/employee/handover?code=${encodeURIComponent(qrAsset.uuid)}`
+    ? `${publicAppUrl}/employee/handover?code=${encodeURIComponent(qrAsset.uuid)}`
     : qrAsset?.asset_code || '';
 
   return (
