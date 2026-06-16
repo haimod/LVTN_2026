@@ -36,11 +36,13 @@ const DepartmentList = () => {
   };
 
   useEffect(() => {
-    fetchDepartments();
+    const timer = window.setTimeout(fetchDepartments, 0);
+    return () => window.clearTimeout(timer);
   }, [search]);
 
   useEffect(() => {
-    fetchUsers(); 
+    const timer = window.setTimeout(fetchUsers, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   const showModal = (dept = null) => {

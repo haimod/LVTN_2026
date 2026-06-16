@@ -65,12 +65,16 @@ const UserList = () => {
   };
 
   useEffect(() => {
-    fetchUsers();
+    const timer = window.setTimeout(fetchUsers, 0);
+    return () => window.clearTimeout(timer);
   }, [filters]);
 
   useEffect(() => {
-    fetchDepartments();
-    fetchRoles(); 
+    const timer = window.setTimeout(() => {
+      fetchDepartments();
+      fetchRoles();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   const getFirstRoleId = (user) => (
