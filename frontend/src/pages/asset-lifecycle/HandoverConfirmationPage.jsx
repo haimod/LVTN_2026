@@ -1,19 +1,48 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Button, Card, Col, Descriptions, Form, Input, Row, Space, Tag, Typography, Upload, notification } from 'antd';
-import { CameraOutlined, CheckOutlined, QrcodeOutlined, RollbackOutlined, StopOutlined, ToolOutlined, UploadOutlined } from '@ant-design/icons';
+import { Alert, Button, Card, Col, Descriptions, Form, Image, Input, Modal, Row, Skeleton, Space, Tag, Typography, Upload, notification } from 'antd';
+import { CameraOutlined, CheckOutlined, FileImageOutlined, QrcodeOutlined, RollbackOutlined, StopOutlined, ToolOutlined, UploadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useSearchParams } from 'react-router-dom';
 import axiosInstance from '../../utils/axiosInstance';
 
 const { Title, Text } = Typography;
 
-const getStatusTag = (canConfirm) => (
-  canConfirm ? <Tag color="green">Co the xac nhan</Tag> : <Tag color="default">Chi doc</Tag>
-);
+const assetStatusMap = {
+  new: { color: 'green', text: 'Trong kho' },
+  waiting: { color: 'gold', text: 'Chờ bàn giao' },
+  in_use: { color: 'blue', text: 'Đang sử dụng' },
+  repairing: { color: 'red', text: 'Đang bảo trì' },
+  under_investigation: { color: 'volcano', text: 'Đang điều tra mất' },
+  permanently_lost: { color: 'black', text: 'Đã báo mất' },
+  disposed: { color: 'default', text: 'Đã thanh lý' },
+};
+
+const getStatusTag = (status) => {
+  const current = assetStatusMap[status] || { color: 'default', text: status || '-' };
+  return <Tag color={current.color}>{current.text}</Tag>;
+};
 
 const normUploadFile = (event) => {
   if (Array.isArray(event)) return event;
   return event?.fileList || [];
+};
+
+const formatDateTime = (value) => (value ? dayjs(value).format('DD/MM/YYYY HH:mm') : '-');
+
+const getApiOrigin = () => {
+  try {
+    return new URL(axiosInstance.defaults.baseURL).origin;
+  } catch {
+    return '';
+  }
+};
+
+const apiOrigin = getApiOrigin();
+
+const getImageUrl = (path) => {
+  if (!path) return null;
+  if (/^https?:\/\//i.test(path)) return path;
+  return `${apiOrigin}/${path.replace(/^\/+/, '')}`;
 };
 
 const HandoverConfirmationPage = () => {
@@ -21,16 +50,24 @@ const HandoverConfirmationPage = () => {
   const [damageForm] = Form.useForm();
   const [returnForm] = Form.useForm();
   const [searchParams] = useSearchParams();
+  const qrCode = searchParams.get('code');
+  const isQrLink = Boolean(qrCode);
   const [loading, setLoading] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [reporting, setReporting] = useState(false);
   const [returning, setReturning] = useState(false);
+  const [damageOpen, setDamageOpen] = useState(false);
+  const [returnOpen, setReturnOpen] = useState(false);
   const [session, setSession] = useState(null);
   const [result, setResult] = useState(null);
   const [cameraActive, setCameraActive] = useState(false);
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const scanTimerRef = useRef(null);
+
+  const asset = result?.asset;
+  const assignment = result?.assignment;
+  const imageUrl = getImageUrl(asset?.image_path);
 
   const stopCamera = useCallback(() => {
     if (scanTimerRef.current) {
@@ -49,7 +86,7 @@ const HandoverConfirmationPage = () => {
   const inspectCode = useCallback(async (rawCode) => {
     const assetUuid = rawCode?.trim();
     if (!assetUuid) {
-      notification.warning({ message: 'Vui long nhap hoac quet ma QR' });
+      notification.warning({ message: 'Vui lòng nhập hoặc quét mã QR' });
       return;
     }
 
@@ -62,12 +99,9 @@ const HandoverConfirmationPage = () => {
 
       if (payload?.can_confirm) {
         setSession(payload);
-        notification.success({ message: 'Ma QR hop le, phien xac nhan co hieu luc 5 phut' });
-      } else {
-        notification.info({ message: response.data.message || 'Ma QR chi duoc xem thong tin' });
       }
     } catch (error) {
-      const message = error.response?.data?.message || 'Khong the kiem tra ma QR';
+      const message = error.response?.data?.message || 'Không thể kiểm tra mã QR';
       setResult(null);
       notification.error({ message });
     } finally {
@@ -77,7 +111,7 @@ const HandoverConfirmationPage = () => {
 
   const startCamera = async () => {
     if (!('BarcodeDetector' in window)) {
-      notification.warning({ message: 'Trinh duyet nay chua ho tro quet QR truc tiep. Ban co the nhap ma thu cong.' });
+      notification.warning({ message: 'Trình duyệt này chưa hỗ trợ quét QR trực tiếp. Bạn có thể dùng camera điện thoại quét tem để mở link.' });
       return;
     }
 
@@ -116,14 +150,14 @@ const HandoverConfirmationPage = () => {
         }
       }, 700);
     } catch {
-      notification.error({ message: 'Khong the mo camera. Vui long kiem tra quyen truy cap camera.' });
+      notification.error({ message: 'Không thể mở camera. Vui lòng kiểm tra quyền truy cập camera.' });
       stopCamera();
     }
   };
 
   const handleConfirm = async () => {
     if (!session?.token) {
-      notification.warning({ message: 'Vui long quet lai QR de tao phien xac nhan' });
+      notification.warning({ message: 'Phiên xác nhận đã hết hạn. Vui lòng quét lại QR.' });
       return;
     }
 
@@ -131,16 +165,18 @@ const HandoverConfirmationPage = () => {
       setConfirming(true);
       const response = await axiosInstance.post(`/handover-sessions/${session.token}/confirm`);
       const data = response.data.data ? response.data.data : response.data;
-      notification.success({ message: 'Da xac nhan nhan tai san' });
+      notification.success({ message: 'Đã xác nhận nhận tài sản' });
       window.dispatchEvent(new Event('notifications-updated'));
       setSession(null);
       setResult({
         can_confirm: false,
+        can_report_damage: true,
+        can_request_return: true,
         asset: data.asset,
         assignment: data,
       });
     } catch (error) {
-      const message = error.response?.data?.message || 'Khong the xac nhan ban giao';
+      const message = error.response?.data?.message || 'Không thể xác nhận bàn giao';
       notification.error({ message });
     } finally {
       setConfirming(false);
@@ -149,7 +185,7 @@ const HandoverConfirmationPage = () => {
 
   const handleReportDamage = async () => {
     if (!asset?.uuid) {
-      notification.warning({ message: 'Vui long quet lai QR truoc khi bao hong' });
+      notification.warning({ message: 'Vui lòng quét lại QR trước khi báo hỏng' });
       return;
     }
 
@@ -169,12 +205,13 @@ const HandoverConfirmationPage = () => {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
 
-      notification.success({ message: 'Da gui phieu bao hong thiet bi' });
+      notification.success({ message: 'Đã gửi phiếu báo hỏng thiết bị' });
       window.dispatchEvent(new Event('notifications-updated'));
       damageForm.resetFields();
+      setDamageOpen(false);
       inspectCode(asset.uuid);
     } catch (error) {
-      const message = error.response?.data?.message || 'Khong the gui phieu bao hong';
+      const message = error.response?.data?.message || 'Không thể gửi phiếu báo hỏng';
       notification.error({ message });
     } finally {
       setReporting(false);
@@ -183,7 +220,7 @@ const HandoverConfirmationPage = () => {
 
   const handleRequestReturn = async () => {
     if (!assignment?.id || !asset?.uuid) {
-      notification.warning({ message: 'Vui long quet lai QR truoc khi gui yeu cau tra' });
+      notification.warning({ message: 'Vui lòng quét lại QR trước khi gửi yêu cầu trả' });
       return;
     }
 
@@ -195,12 +232,13 @@ const HandoverConfirmationPage = () => {
         return_reason: values.return_reason || '',
       });
 
-      notification.success({ message: 'Da gui yeu cau tra thiet bi cho admin' });
+      notification.success({ message: 'Đã gửi yêu cầu trả thiết bị cho admin' });
       window.dispatchEvent(new Event('notifications-updated'));
       returnForm.resetFields();
+      setReturnOpen(false);
       inspectCode(asset.uuid);
     } catch (error) {
-      const message = error.response?.data?.message || 'Khong the gui yeu cau tra thiet bi';
+      const message = error.response?.data?.message || 'Không thể gửi yêu cầu trả thiết bị';
       notification.error({ message });
     } finally {
       setReturning(false);
@@ -208,214 +246,266 @@ const HandoverConfirmationPage = () => {
   };
 
   useEffect(() => {
-    const code = searchParams.get('code');
-    if (code) {
-      form.setFieldsValue({ asset_uuid: code });
-      const timer = window.setTimeout(() => inspectCode(code), 0);
+    if (qrCode) {
+      form.setFieldsValue({ asset_uuid: qrCode });
+      const timer = window.setTimeout(() => inspectCode(qrCode), 0);
       return () => window.clearTimeout(timer);
     }
 
     return undefined;
-  }, [form, inspectCode, searchParams]);
+  }, [form, inspectCode, qrCode]);
 
   useEffect(() => stopCamera, [stopCamera]);
 
-  const asset = result?.asset;
-  const assignment = result?.assignment;
+  const renderWorkflowNotice = () => {
+    if (!asset) {
+      return null;
+    }
+
+    if (result?.is_blacklisted) {
+      return (
+        <Alert
+          type="error"
+          showIcon
+          message="Thiết bị đang nằm trong luồng báo mất"
+          description="Không thể xác nhận, báo hỏng hoặc yêu cầu trả bằng QR này cho đến khi admin xử lý hồ sơ báo mất."
+        />
+      );
+    }
+
+    if (asset.status === 'disposed') {
+      return <Alert type="info" showIcon message="Thiết bị đã thanh lý" description="QR chỉ dùng để tra cứu thông tin thiết bị." />;
+    }
+
+    if (result?.can_confirm) {
+      return <Alert type="success" showIcon message="Thiết bị đang chờ bạn xác nhận nhận tài sản" description="Kiểm tra đúng mã máy và tình trạng vật lý trước khi xác nhận." />;
+    }
+
+    if (assignment?.return_requested_at) {
+      return <Alert type="info" showIcon message="Đã gửi yêu cầu trả thiết bị" description="Phiếu mượn sẽ đóng khi admin xác nhận đã nhận lại thiết bị." />;
+    }
+
+    if (result?.can_report_damage || result?.can_request_return) {
+      return <Alert type="info" showIcon message="Bạn đang giữ thiết bị này" description="Có thể báo hỏng hoặc yêu cầu trả thiết bị bằng các nút bên dưới." />;
+    }
+
+    return <Alert type="warning" showIcon message="Chỉ được xem thông tin" description="Thiết bị này không nằm trong phiếu bàn giao đang chờ xác nhận của tài khoản hiện tại." />;
+  };
+
+  const renderActionButtons = () => {
+    if (!asset || result?.is_blacklisted || asset.status === 'disposed') {
+      return null;
+    }
+
+    if (result?.can_confirm) {
+      return (
+        <Button type="primary" icon={<CheckOutlined />} loading={confirming} onClick={handleConfirm}>
+          Xác nhận nhận tài sản
+        </Button>
+      );
+    }
+
+    if (result?.can_report_damage || result?.can_request_return) {
+      return (
+        <Space wrap>
+          {result?.can_report_damage ? (
+            <Button danger type="primary" icon={<ToolOutlined />} onClick={() => setDamageOpen(true)}>
+              Báo hỏng
+            </Button>
+          ) : null}
+          {result?.can_request_return ? (
+            <Button type="primary" icon={<RollbackOutlined />} onClick={() => setReturnOpen(true)}>
+              Yêu cầu trả thiết bị
+            </Button>
+          ) : null}
+        </Space>
+      );
+    }
+
+    return null;
+  };
+
+  const renderAssetInfo = () => {
+    if (loading && !asset) {
+      return <Skeleton active paragraph={{ rows: 8 }} />;
+    }
+
+    if (!asset) {
+      return (
+        <Alert
+          type="info"
+          showIcon
+          message={isQrLink ? 'Đang chờ thông tin thiết bị' : 'Chưa có thiết bị'}
+          description={isQrLink ? 'Hệ thống đang đọc mã QR trên thiết bị.' : 'Nhập mã hoặc mở camera để kiểm tra QR.'}
+        />
+      );
+    }
+
+    return (
+      <Space direction="vertical" size={16} style={{ width: '100%' }}>
+        <Row gutter={[16, 16]}>
+          <Col xs={24} md={8}>
+            {imageUrl ? (
+              <Image
+                src={imageUrl}
+                alt={asset.name}
+                width="100%"
+                height={220}
+                style={{ objectFit: 'cover', borderRadius: 8, border: '1px solid #f0f0f0' }}
+              />
+            ) : (
+              <div style={{ height: 220, border: '1px solid #f0f0f0', borderRadius: 8, display: 'grid', placeItems: 'center', color: '#bfbfbf', background: '#fafafa' }}>
+                <Space direction="vertical" align="center">
+                  <FileImageOutlined style={{ fontSize: 28 }} />
+                  <Text type="secondary">Chưa có ảnh thiết bị</Text>
+                </Space>
+              </div>
+            )}
+          </Col>
+
+          <Col xs={24} md={16}>
+            <Space direction="vertical" size={12} style={{ width: '100%' }}>
+              <Space wrap style={{ width: '100%', justifyContent: 'space-between' }}>
+                <div>
+                  <Title level={4} style={{ margin: 0 }}>{asset.asset_code}</Title>
+                  <Text type="secondary">{asset.name}</Text>
+                </div>
+                {getStatusTag(asset.status)}
+              </Space>
+
+              <Descriptions bordered size="small" column={1}>
+                <Descriptions.Item label="Tên thiết bị">{asset.name}</Descriptions.Item>
+                <Descriptions.Item label="Danh mục">{asset.category?.name || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Vị trí/phòng ban">{asset.department?.name || 'Kho tổng'}</Descriptions.Item>
+                <Descriptions.Item label="Người được cấp phát">{assignment?.user?.name || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Người cấp phát">{assignment?.assigned_by?.name || assignment?.assignedBy?.name || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Ngày cấp phát">{formatDateTime(assignment?.assigned_at)}</Descriptions.Item>
+                <Descriptions.Item label="Ngày xác nhận">{formatDateTime(assignment?.confirmed_at)}</Descriptions.Item>
+                <Descriptions.Item label="Hạn xác nhận">{session?.expires_at ? dayjs(session.expires_at).format('DD/MM/YYYY HH:mm:ss') : '-'}</Descriptions.Item>
+              </Descriptions>
+            </Space>
+          </Col>
+        </Row>
+
+        {renderWorkflowNotice()}
+        {renderActionButtons()}
+      </Space>
+    );
+  };
 
   return (
     <Space direction="vertical" size={20} style={{ width: '100%' }}>
       <div>
-        <Title level={3} style={{ margin: 0 }}>Xac nhan ban giao QR</Title>
-        <Text type="secondary">Quet ma QR tren thiet bi de xac nhan ban da nhan dung tai san duoc cap phat.</Text>
+        <Title level={3} style={{ margin: 0 }}>{isQrLink ? 'Thông tin thiết bị' : 'Quét QR thiết bị'}</Title>
+        <Text type="secondary">{isQrLink ? 'Thông tin và thao tác theo tem QR dán trên thiết bị.' : 'Dùng khi cần kiểm tra mã QR thủ công trong hệ thống.'}</Text>
       </div>
 
       <Row gutter={[16, 16]}>
-        <Col xs={24} lg={10}>
-          <Card bordered={false} style={{ borderRadius: 8 }}>
-            <Space direction="vertical" size={16} style={{ width: '100%' }}>
-              <Form form={form} layout="vertical" onFinish={(values) => inspectCode(values.asset_uuid)}>
-                <Form.Item
-                  name="asset_uuid"
-                  label="Ma QR / duong dan QR"
-                  rules={[{ required: true, message: 'Vui long nhap ma QR' }]}
-                >
-                  <Input.TextArea rows={3} placeholder="Quet QR hoac dan UUID/duong dan QR vao day" />
-                </Form.Item>
-
-                <Space wrap>
-                  <Button type="primary" htmlType="submit" icon={<QrcodeOutlined />} loading={loading}>
-                    Kiem tra QR
-                  </Button>
-                  {!cameraActive ? (
-                    <Button icon={<CameraOutlined />} onClick={startCamera}>
-                      Mo camera
-                    </Button>
-                  ) : (
-                    <Button danger icon={<StopOutlined />} onClick={stopCamera}>
-                      Tat camera
-                    </Button>
-                  )}
-                </Space>
-              </Form>
-
-              {cameraActive ? (
-                <video
-                  ref={videoRef}
-                  muted
-                  playsInline
-                  style={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 8, background: '#111' }}
-                />
-              ) : null}
-            </Space>
-          </Card>
-        </Col>
-
-        <Col xs={24} lg={14}>
-          <Card bordered={false} style={{ borderRadius: 8 }}>
-            {!asset ? (
-              <Alert
-                type="info"
-                showIcon
-                message="Chua co thiet bi"
-                description="Nhap hoac quet ma QR de xem thong tin ban giao."
-              />
-            ) : (
+        {!isQrLink ? (
+          <Col xs={24} lg={9}>
+            <Card title="Kiểm tra QR" bordered={false} style={{ borderRadius: 8 }}>
               <Space direction="vertical" size={16} style={{ width: '100%' }}>
-                <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-                  <Title level={4} style={{ margin: 0 }}>{asset.asset_code}</Title>
-                  {result?.is_blacklisted ? <Tag color="red">Blacklist</Tag> : getStatusTag(result?.can_confirm)}
-                </Space>
-
-                <Descriptions bordered size="small" column={1}>
-                  <Descriptions.Item label="Ten thiet bi">{asset.name}</Descriptions.Item>
-                  <Descriptions.Item label="Danh muc">{asset.category?.name || '-'}</Descriptions.Item>
-                  <Descriptions.Item label="Trang thai hien tai">{asset.status || '-'}</Descriptions.Item>
-                  <Descriptions.Item label="Nguoi cap phat">{assignment?.assigned_by?.name || assignment?.assignedBy?.name || '-'}</Descriptions.Item>
-                  <Descriptions.Item label="Ngay cap phat">
-                    {assignment?.assigned_at ? dayjs(assignment.assigned_at).format('DD/MM/YYYY HH:mm') : '-'}
-                  </Descriptions.Item>
-                  <Descriptions.Item label="Han xac nhan">
-                    {session?.expires_at ? dayjs(session.expires_at).format('DD/MM/YYYY HH:mm:ss') : '-'}
-                  </Descriptions.Item>
-                </Descriptions>
-
-                {result?.is_blacklisted ? (
-                  <Alert
-                    type="error"
-                    showIcon
-                    message="Thiet bi dang nam trong luong bao mat"
-                    description="QR nay chi duoc xem thong tin. Khong the xac nhan ban giao hoac bao hong cho den khi admin xu ly phieu bao mat."
-                  />
-                ) : result?.can_confirm ? (
-                  <Button
-                    type="primary"
-                    icon={<CheckOutlined />}
-                    loading={confirming}
-                    onClick={handleConfirm}
+                <Form form={form} layout="vertical" onFinish={(values) => inspectCode(values.asset_uuid)}>
+                  <Form.Item
+                    name="asset_uuid"
+                    label="Mã QR hoặc đường dẫn QR"
+                    rules={[{ required: true, message: 'Vui lòng nhập mã QR' }]}
                   >
-                    Xac nhan nhan tai san
-                  </Button>
-                ) : assignment?.return_requested_at ? (
-                  <Alert
-                    type="info"
-                    showIcon
-                    message="Da gui yeu cau tra thiet bi"
-                    description="Vui long ban giao thiet bi truc tiep cho admin. Phieu muon se dong khi admin xac nhan da nhan lai."
+                    <Input.TextArea rows={3} placeholder="Dán UUID hoặc đường dẫn QR vào đây" />
+                  </Form.Item>
+
+                  <Space wrap>
+                    <Button type="primary" htmlType="submit" icon={<QrcodeOutlined />} loading={loading}>
+                      Kiểm tra QR
+                    </Button>
+                    {!cameraActive ? (
+                      <Button icon={<CameraOutlined />} onClick={startCamera}>
+                        Mở camera
+                      </Button>
+                    ) : (
+                      <Button danger icon={<StopOutlined />} onClick={stopCamera}>
+                        Tắt camera
+                      </Button>
+                    )}
+                  </Space>
+                </Form>
+
+                {cameraActive ? (
+                  <video
+                    ref={videoRef}
+                    muted
+                    playsInline
+                    style={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 8, background: '#111' }}
                   />
-                ) : result?.can_report_damage || result?.can_request_return ? (
-                  <Alert
-                    type="info"
-                    showIcon
-                    message="Ban dang giu thiet bi nay"
-                    description="Co the bao hong hoac gui yeu cau tra thiet bi ben duoi. Phieu muon chi dong khi admin tiep nhan/xac nhan."
-                  />
-                ) : (
-                  <Alert
-                    type="warning"
-                    showIcon
-                    message="Khong the xac nhan bang ma QR nay"
-                    description="Thiet bi nay khong nam trong phieu ban giao dang cho tai khoan hien tai xac nhan."
-                  />
-                )}
-
-                {result?.can_report_damage || result?.can_request_return ? (
-                  <Row gutter={[12, 12]}>
-                    {result?.can_report_damage ? (
-                      <Col xs={24} xl={12}>
-                        <Card size="small" title="Bao hong thiet bi" bordered>
-                          <Form form={damageForm} layout="vertical">
-                            <Form.Item
-                              name="description"
-                              label="Mo ta su co"
-                              rules={[
-                                { required: true, message: 'Vui long nhap mo ta su co' },
-                                { min: 10, message: 'Mo ta can toi thieu 10 ky tu' },
-                              ]}
-                            >
-                              <Input.TextArea rows={4} placeholder="Mo ta hien tuong loi, thoi diem phat hien, tinh trang hien tai..." />
-                            </Form.Item>
-
-                            <Form.Item
-                              name="image"
-                              label="Anh minh chung"
-                              valuePropName="fileList"
-                              getValueFromEvent={normUploadFile}
-                            >
-                              <Upload
-                                accept="image/png,image/jpeg,image/webp"
-                                beforeUpload={() => false}
-                                maxCount={1}
-                                listType="picture"
-                              >
-                                <Button icon={<UploadOutlined />}>Chon anh</Button>
-                              </Upload>
-                            </Form.Item>
-
-                            <Button
-                              danger
-                              type="primary"
-                              icon={<ToolOutlined />}
-                              loading={reporting}
-                              onClick={handleReportDamage}
-                            >
-                              Gui bao hong
-                            </Button>
-                          </Form>
-                        </Card>
-                      </Col>
-                    ) : null}
-
-                    {result?.can_request_return ? (
-                      <Col xs={24} xl={12}>
-                        <Card size="small" title="Yeu cau tra thiet bi" bordered>
-                          <Form form={returnForm} layout="vertical">
-                            <Form.Item
-                              name="return_reason"
-                              label="Ghi chu tra thiet bi"
-                            >
-                              <Input.TextArea rows={4} placeholder="Tinh trang thiet bi khi tra, phu kien di kem, ghi chu neu co..." />
-                            </Form.Item>
-
-                            <Button
-                              type="primary"
-                              icon={<RollbackOutlined />}
-                              loading={returning}
-                              onClick={handleRequestReturn}
-                            >
-                              Gui yeu cau tra
-                            </Button>
-                          </Form>
-                        </Card>
-                      </Col>
-                    ) : null}
-                  </Row>
                 ) : null}
               </Space>
-            )}
+            </Card>
+          </Col>
+        ) : null}
+
+        <Col xs={24} lg={isQrLink ? 24 : 15}>
+          <Card bordered={false} style={{ borderRadius: 8 }}>
+            {renderAssetInfo()}
           </Card>
         </Col>
       </Row>
+
+      <Modal
+        title={asset ? `Báo hỏng ${asset.asset_code}` : 'Báo hỏng thiết bị'}
+        open={damageOpen}
+        onCancel={() => setDamageOpen(false)}
+        onOk={handleReportDamage}
+        okText="Gửi báo hỏng"
+        cancelText="Hủy"
+        confirmLoading={reporting}
+        destroyOnHidden
+      >
+        <Form form={damageForm} layout="vertical">
+          <Form.Item
+            name="description"
+            label="Mô tả sự cố"
+            rules={[
+              { required: true, message: 'Vui lòng nhập mô tả sự cố' },
+              { min: 10, message: 'Mô tả cần tối thiểu 10 ký tự' },
+            ]}
+          >
+            <Input.TextArea rows={4} placeholder="Mô tả hiện tượng lỗi, thời điểm phát hiện, tình trạng hiện tại..." />
+          </Form.Item>
+
+          <Form.Item
+            name="image"
+            label="Ảnh minh chứng"
+            valuePropName="fileList"
+            getValueFromEvent={normUploadFile}
+          >
+            <Upload
+              accept="image/png,image/jpeg,image/webp"
+              beforeUpload={() => false}
+              maxCount={1}
+              listType="picture"
+            >
+              <Button icon={<UploadOutlined />}>Chọn ảnh</Button>
+            </Upload>
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title={asset ? `Yêu cầu trả ${asset.asset_code}` : 'Yêu cầu trả thiết bị'}
+        open={returnOpen}
+        onCancel={() => setReturnOpen(false)}
+        onOk={handleRequestReturn}
+        okText="Gửi yêu cầu"
+        cancelText="Hủy"
+        confirmLoading={returning}
+        destroyOnHidden
+      >
+        <Form form={returnForm} layout="vertical">
+          <Form.Item name="return_reason" label="Ghi chú khi trả">
+            <Input.TextArea rows={4} placeholder="Tình trạng thiết bị khi trả, phụ kiện đi kèm, ghi chú nếu có..." />
+          </Form.Item>
+        </Form>
+      </Modal>
     </Space>
   );
 };
