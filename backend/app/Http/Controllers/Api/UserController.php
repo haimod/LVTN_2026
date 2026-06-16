@@ -7,6 +7,8 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use App\Models\Department;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 class UserController extends Controller
 {
     // 1. LẤY DANH SÁCH NHÂN VIÊN
@@ -117,11 +119,19 @@ class UserController extends Controller
         $isManagerOf = Department::where('manager_id', $id)->first();
         $currentRoleId = $user->roles()->value('roles.id');
         $roleChanged = (string) $currentRoleId !== (string) $request->role_id;
+        $departmentChanged = (string) $user->department_id !== (string) $request->department_id;
 
         if ($isManagerOf && $roleChanged) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Hệ thống từ chối! Nhân sự này đang là người duyệt của [' . $isManagerOf->name . ']. Vui lòng sang Quản lý Phòng ban bổ nhiệm người khác thay thế trước khi đổi chức vụ.'
+            ], 400);
+        }
+
+        if ($isManagerOf && $departmentChanged) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'He thong tu choi! Nhan su nay dang la nguoi duyet cua [' . $isManagerOf->name . ']. Vui long bo nhiem nguoi duyet khac truoc khi chuyen phong ban.'
             ], 400);
         }
 
@@ -133,6 +143,16 @@ class UserController extends Controller
         }
 
         // Bỏ password và role_id ra khỏi mảng cập nhật bảng users
+        if (!$request->boolean('is_active')) {
+            $blockMessage = $this->getAccountLockBlockMessage($user->id);
+            if ($blockMessage) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $blockMessage
+                ], 400);
+            }
+        }
+
         $dataUpdate = $request->except(['password', 'role_id']); 
         
         if ($request->filled('password')) { 
@@ -141,8 +161,15 @@ class UserController extends Controller
 
         $user->update($dataUpdate);
 
+        if ($departmentChanged) {
+            $this->syncActiveAssetDepartment($user->id, (int) $request->department_id);
+        }
+
         // Cập nhật chức vụ mới vào bảng trung gian (xóa cũ, đắp mới)
         $user->roles()->syncWithPivotValues([$request->role_id], ['model_type' => User::class]);
+        if (!$request->boolean('is_active')) {
+            $user->tokens()->delete();
+        }
         $user->load(['department', 'roles']);
 
         return response()->json([
@@ -168,7 +195,16 @@ class UserController extends Controller
             ], 400);
         }
 
+        $blockMessage = $this->getAccountLockBlockMessage($user->id);
+        if ($blockMessage) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $blockMessage
+            ], 400);
+        }
+
         $user->update(['is_active' => 0]);
+        $user->tokens()->delete();
         $user->load(['department', 'roles']);
 
         return response()->json([
@@ -176,5 +212,49 @@ class UserController extends Controller
             'message' => 'Đã khóa tài khoản thành công!',
             'data' => $user
         ], 200);
+    }
+
+    private function getAccountLockBlockMessage(int $userId): ?string
+    {
+        $activeAssignmentCount = DB::table('assignments')
+            ->where('user_id', $userId)
+            ->whereIn('status', ['waiting', 'active'])
+            ->count();
+
+        if ($activeAssignmentCount > 0) {
+            return 'Khong the khoa tai khoan: nhan su van con ' . $activeAssignmentCount . ' phieu ban giao chua dong. Vui long thu hoi/xu ly tai san truoc.';
+        }
+
+        if (Schema::hasTable('maintenance_records')) {
+            $pendingMaintenanceCount = DB::table('maintenance_records')
+                ->where('reported_by', $userId)
+                ->whereIn('status', ['pending', 'repairing'])
+                ->count();
+
+            if ($pendingMaintenanceCount > 0) {
+                return 'Khong the khoa tai khoan: nhan su con ' . $pendingMaintenanceCount . ' phieu bao tri chua dong. Vui long xu ly cong no bao tri truoc.';
+            }
+        }
+
+        return null;
+    }
+
+    private function syncActiveAssetDepartment(int $userId, int $departmentId): void
+    {
+        $assetIds = DB::table('assignments')
+            ->where('user_id', $userId)
+            ->where('status', 'active')
+            ->pluck('asset_id');
+
+        if ($assetIds->isEmpty()) {
+            return;
+        }
+
+        DB::table('assets')
+            ->whereIn('id', $assetIds)
+            ->update([
+                'department_id' => $departmentId,
+                'updated_at' => now(),
+            ]);
     }
 }
