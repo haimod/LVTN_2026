@@ -91,9 +91,30 @@ class AssetController extends Controller
         }
 
         $assets = $query->orderBy('created_at', 'desc')->get();
+        $historiesByAsset = collect();
+
+        if ($assets->isNotEmpty() && Schema::hasTable('asset_histories')) {
+            $historiesByAsset = DB::table('asset_histories')
+                ->leftJoin('users', 'asset_histories.user_id', '=', 'users.id')
+                ->whereIn('asset_histories.asset_id', $assets->pluck('id'))
+                ->orderBy('asset_histories.created_at')
+                ->orderBy('asset_histories.id')
+                ->select([
+                    'asset_histories.asset_id',
+                    'asset_histories.event_type',
+                    'asset_histories.old_status',
+                    'asset_histories.new_status',
+                    'asset_histories.note',
+                    'asset_histories.created_at',
+                    'users.name as user_name',
+                ])
+                ->get()
+                ->groupBy('asset_id');
+        }
+
         $filename = 'danh-sach-tai-san-' . now()->format('Ymd-His') . '.csv';
 
-        return response()->streamDownload(function () use ($assets) {
+        return response()->streamDownload(function () use ($assets, $historiesByAsset) {
             $handle = fopen('php://output', 'w');
             fwrite($handle, "\xEF\xBB\xBF");
 
@@ -107,6 +128,7 @@ class AssetController extends Controller
                 'Ngay mua',
                 'Han bao hanh',
                 'Mo ta',
+                'Lich su tai san',
             ]);
 
             foreach ($assets as $asset) {
@@ -120,6 +142,7 @@ class AssetController extends Controller
                     $asset->purchase_date,
                     $asset->warranty_expiry,
                     $asset->description,
+                    $this->formatHistoriesForExport($historiesByAsset->get($asset->id, collect())),
                 ]);
             }
 
@@ -127,6 +150,26 @@ class AssetController extends Controller
         }, $filename, [
             'Content-Type' => 'text/csv; charset=UTF-8',
         ]);
+    }
+
+    private function formatHistoriesForExport($histories): string
+    {
+        if ($histories->isEmpty()) {
+            return '';
+        }
+
+        return $histories->map(function ($history) {
+            $time = $history->created_at
+                ? Carbon::parse($history->created_at)->format('d/m/Y H:i')
+                : '-';
+            $event = $this->historyEventLabel($history->event_type);
+            $oldStatus = $this->assetStatusLabel($history->old_status);
+            $newStatus = $this->assetStatusLabel($history->new_status);
+            $user = $history->user_name ?: '-';
+            $note = $history->note ?: '-';
+
+            return "{$time} | {$event} | {$oldStatus} -> {$newStatus} | {$user} | {$note}";
+        })->implode("\n");
     }
 
     public function store(Request $request)
@@ -353,6 +396,36 @@ class AssetController extends Controller
             'status' => 'error',
             'message' => 'Bạn không có quyền thao tác kho tài sản tổng.'
         ], 403);
+    }
+
+    private function historyEventLabel(?string $eventType): string
+    {
+        return [
+            'assigned' => 'Cấp phát',
+            'confirmed_handover' => 'Xác nhận bàn giao',
+            'reported_damage' => 'Báo hỏng',
+            'repairing' => 'Tiếp nhận bảo trì',
+            'repaired' => 'Hoàn tất bảo trì',
+            'reported_lost' => 'Báo mất',
+            'lost_recovered' => 'Tìm lại thiết bị',
+            'confirmed_lost' => 'Xác nhận mất',
+            'return_requested' => 'Yêu cầu trả',
+            'returned_to_warehouse' => 'Nhận lại kho',
+            'disposed' => 'Thanh lý',
+        ][$eventType] ?? ($eventType ?: '-');
+    }
+
+    private function assetStatusLabel(?string $status): string
+    {
+        return [
+            'new' => 'Mới nhập kho',
+            'in_use' => 'Đang sử dụng',
+            'waiting' => 'Chờ bàn giao/xử lý',
+            'repairing' => 'Đang bảo trì',
+            'under_investigation' => 'Đang điều tra mất',
+            'permanently_lost' => 'Mất vĩnh viễn',
+            'disposed' => 'Đã thanh lý',
+        ][$status] ?? ($status ?: '-');
     }
 
     private function canView(Request $request, Asset $asset): bool

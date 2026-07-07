@@ -53,7 +53,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/assets/export', [AssetController::class, 'export'])->middleware('role:admin');
     Route::apiResource('assets', AssetController::class);
     Route::patch('/assets/{id}/dispose', [AssetController::class, 'dispose'])->middleware('role:admin');
-    Route::get('/assets/{id}/histories', [AssetHistoryController::class, 'index'])->middleware('role:admin');
+    Route::get('/asset-histories', [AssetHistoryController::class, 'activityLog'])->middleware('role:admin');
+    Route::get('/assets/{id}/histories', [AssetHistoryController::class, 'index']);
     Route::apiResource('assignment-requests', AssignmentRequestController::class)->only(['index', 'store', 'show']);
     Route::patch('/assignment-requests/{id}/manager-approve', [AssignmentRequestController::class, 'managerApprove']);
     Route::patch('/assignment-requests/{id}/manager-reject', [AssignmentRequestController::class, 'managerReject']);

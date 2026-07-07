@@ -160,6 +160,9 @@ class DashboardController extends Controller
         $returnRequestedSelect = Schema::hasColumn('assignments', 'return_requested_at')
             ? 'assignments.return_requested_at'
             : DB::raw('NULL as return_requested_at');
+        $expectedReturnDateSelect = Schema::hasColumn('assignments', 'expected_return_date')
+            ? 'assignments.expected_return_date'
+            : DB::raw('NULL as expected_return_date');
 
         return DB::table('assignments')
             ->join('assets', 'assignments.asset_id', '=', 'assets.id')
@@ -175,6 +178,7 @@ class DashboardController extends Controller
                 'assignments.status',
                 'assignments.note',
                 'assignments.assigned_at',
+                $expectedReturnDateSelect,
                 'assignments.confirmed_at',
                 $returnRequestedSelect,
                 'assets.id as asset_id',
@@ -192,6 +196,7 @@ class DashboardController extends Controller
                 'status' => $item->status,
                 'note' => $item->note,
                 'assigned_at' => $item->assigned_at,
+                'expected_return_date' => $item->expected_return_date,
                 'confirmed_at' => $item->confirmed_at,
                 'return_requested_at' => $item->return_requested_at,
                 'asset_id' => $item->asset_id,
@@ -213,6 +218,10 @@ class DashboardController extends Controller
             return [];
         }
 
+        $expectedReturnDateSelect = Schema::hasColumn('assignment_requests', 'expected_return_date')
+            ? 'assignment_requests.expected_return_date'
+            : DB::raw('NULL as expected_return_date');
+
         return DB::table('assignment_requests')
             ->leftJoin('categories', 'assignment_requests.category_id', '=', 'categories.id')
             ->where('assignment_requests.requester_id', $userId)
@@ -223,6 +232,8 @@ class DashboardController extends Controller
                 'assignment_requests.id',
                 'assignment_requests.status',
                 'assignment_requests.reason',
+                'assignment_requests.requested_specification',
+                $expectedReturnDateSelect,
                 'assignment_requests.manager_note',
                 'assignment_requests.admin_note',
                 'assignment_requests.created_at',
@@ -233,6 +244,8 @@ class DashboardController extends Controller
                 'id' => $item->id,
                 'status' => $item->status,
                 'reason' => $item->reason,
+                'requested_specification' => $item->requested_specification,
+                'expected_return_date' => $item->expected_return_date,
                 'manager_note' => $item->manager_note,
                 'admin_note' => $item->admin_note,
                 'created_at' => $item->created_at,
@@ -280,6 +293,10 @@ class DashboardController extends Controller
             return [];
         }
 
+        $expectedReturnDateSelect = Schema::hasColumn('assignment_requests', 'expected_return_date')
+            ? 'assignment_requests.expected_return_date'
+            : DB::raw('NULL as expected_return_date');
+
         return DB::table('assignment_requests')
             ->join('users', 'assignment_requests.requester_id', '=', 'users.id')
             ->leftJoin('categories', 'assignment_requests.category_id', '=', 'categories.id')
@@ -292,6 +309,8 @@ class DashboardController extends Controller
             ->select([
                 'assignment_requests.id',
                 'assignment_requests.reason',
+                'assignment_requests.requested_specification',
+                $expectedReturnDateSelect,
                 'assignment_requests.created_at',
                 'users.name as requester_name',
                 'users.email as requester_email',
@@ -301,6 +320,8 @@ class DashboardController extends Controller
             ->map(fn ($item) => [
                 'id' => $item->id,
                 'reason' => $item->reason,
+                'requested_specification' => $item->requested_specification,
+                'expected_return_date' => $item->expected_return_date,
                 'created_at' => $item->created_at,
                 'requester_name' => $item->requester_name,
                 'requester_email' => $item->requester_email,

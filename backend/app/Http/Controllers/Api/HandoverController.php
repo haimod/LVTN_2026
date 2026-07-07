@@ -53,6 +53,7 @@ class HandoverController extends Controller
         $assignment = Assignment::with([
             'asset:id,uuid,asset_code,name,category_id,department_id,image_path,status',
             'asset.category:id,name',
+            'asset.department:id,name',
             'user:id,name,email,department_id',
             'assignedBy:id,name',
         ])
@@ -65,6 +66,7 @@ class HandoverController extends Controller
         $activeAssignment = Assignment::with([
             'asset:id,uuid,asset_code,name,category_id,department_id,image_path,status',
             'asset.category:id,name',
+            'asset.department:id,name',
             'user:id,name,email,department_id',
             'assignedBy:id,name',
         ])
@@ -187,6 +189,7 @@ class HandoverController extends Controller
         $assignment->load([
             'asset:id,uuid,asset_code,name,category_id,department_id,image_path,status',
             'asset.category:id,name',
+            'asset.department:id,name',
             'user:id,name,email,department_id',
             'user.department:id,name,manager_id',
             'assignedBy:id,name',

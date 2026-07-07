@@ -82,27 +82,23 @@ class AssignmentRequestController extends Controller
 
         $request->validate([
             'category_id' => 'required|exists:categories,id',
+            'requested_specification' => 'required|string|min:5|max:2000',
+            'expected_return_date' => 'required|date|after_or_equal:today',
             'reason' => 'required|string|min:10|max:2000',
         ], [
+            'requested_specification.required' => 'Vui lòng mô tả thiết bị hoặc cấu hình mong muốn.',
+            'requested_specification.min' => 'Mô tả thiết bị/cấu hình mong muốn cần tối thiểu 5 ký tự.',
+            'expected_return_date.required' => 'Vui lòng chọn ngày dự kiến trả thiết bị.',
+            'expected_return_date.after_or_equal' => 'Ngày dự kiến trả không được nhỏ hơn ngày hiện tại.',
             'reason.min' => 'Lý do mượn thiết bị cần tối thiểu 10 ký tự.',
         ]);
-
-        $hasOpenSameCategoryRequest = AssignmentRequest::where('requester_id', $user->id)
-            ->where('category_id', $request->category_id)
-            ->whereIn('status', ['pending', 'mgr_approved', 'approved', 'out_of_stock'])
-            ->exists();
-
-        if ($hasOpenSameCategoryRequest) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Ban dang co yeu cau cung danh muc chua ket thuc. Vui long theo doi yeu cau hien tai truoc khi tao moi.'
-            ], 400);
-        }
 
         $data = [
             'requester_id' => $user->id,
             'category_id' => $request->category_id,
+            'requested_specification' => $request->requested_specification,
             'reason' => $request->reason,
+            'expected_return_date' => $request->expected_return_date,
             'status' => 'pending',
         ];
 
@@ -338,24 +334,10 @@ class AssignmentRequestController extends Controller
                 abort(response()->json(['status' => 'error', 'message' => 'Không tìm thấy tài sản'], 404));
             }
 
-            if ((string) $asset->category_id !== (string) $assignmentRequest->category_id) {
-                abort(response()->json([
-                    'status' => 'error',
-                    'message' => 'Thiết bị được chọn không thuộc đúng danh mục nhân viên yêu cầu.'
-                ], 400));
-            }
-
             if ($asset->status !== 'new') {
                 abort(response()->json([
                     'status' => 'error',
-                    'message' => 'Chỉ có thể cấp phát thiết bị đang rảnh trong kho.'
-                ], 400));
-            }
-
-            if ($asset->department_id !== null) {
-                abort(response()->json([
-                    'status' => 'error',
-                    'message' => 'Chi co the cap phat thiet bi dang nam trong kho tong, chua gan phong ban.'
+                    'message' => 'Chỉ có thể cấp phát thiết bị đang rảnh.'
                 ], 400));
             }
 
@@ -371,6 +353,9 @@ class AssignmentRequestController extends Controller
             }
 
             $note = $request->admin_note ?: 'Admin xác nhận xuất kho theo yêu cầu mượn thiết bị.';
+            if ((string) $asset->category_id !== (string) $assignmentRequest->category_id) {
+                $note = trim($note . ' Admin điều chỉnh danh mục cấp phát theo nhu cầu thực tế của người mượn.');
+            }
             $oldStatus = $asset->status;
 
             Assignment::create([
@@ -381,6 +366,7 @@ class AssignmentRequestController extends Controller
                 'status' => 'waiting',
                 'note' => $note,
                 'assigned_at' => now(),
+                'expected_return_date' => $assignmentRequest->expected_return_date,
             ]);
 
             $asset->update([
@@ -389,6 +375,7 @@ class AssignmentRequestController extends Controller
 
             $assignmentRequest->update([
                 'status' => 'approved',
+                'category_id' => $asset->category_id,
                 'admin_id' => $request->user()->id,
                 'admin_note' => $request->admin_note,
                 'admin_at' => now(),

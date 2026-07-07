@@ -17,6 +17,9 @@ class BorrowHistoryController extends Controller
             'asset.category:id,name',
             'assignedBy:id,name',
             'returnedBy:id,name',
+            'lostReport:id,asset_id,assignment_id,reported_by,handled_by,description,admin_note,status,resolved_at,created_at',
+            'lostReport.reportedBy:id,name',
+            'lostReport.handledBy:id,name',
         ])->where('user_id', $user->id);
 
         if ($request->filled('status') && in_array($request->status, ['waiting', 'active', 'returned'], true)) {

@@ -68,10 +68,12 @@ class MaintenanceRecordController extends Controller
         $request->validate([
             'asset_uuid' => 'required|string|max:500',
             'description' => 'required|string|min:10|max:2000',
-            'image' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:4096',
+            'image' => 'nullable|file|mimes:jpg,jpeg,png,webp,heic,heif|max:2048',
         ], [
             'description.required' => 'Vui long nhap mo ta su co.',
             'description.min' => 'Mo ta su co can toi thieu 10 ky tu.',
+            'image.mimes' => 'Anh minh chung chi ho tro JPG, PNG, WEBP hoac HEIC.',
+            'image.max' => 'Anh minh chung toi da 2MB. Vui long chon anh nho hon hoac chup lai anh.',
         ]);
 
         $record = DB::transaction(function () use ($request) {

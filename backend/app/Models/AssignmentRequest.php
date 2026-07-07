@@ -11,7 +11,9 @@ class AssignmentRequest extends Model
     protected $fillable = [
         'requester_id',
         'category_id',
+        'requested_specification',
         'reason',
+        'expected_return_date',
         'status',
         'manager_id',
         'manager_note',
@@ -19,6 +21,12 @@ class AssignmentRequest extends Model
         'admin_id',
         'admin_note',
         'admin_at',
+    ];
+
+    protected $casts = [
+        'expected_return_date' => 'date:Y-m-d',
+        'manager_at' => 'datetime',
+        'admin_at' => 'datetime',
     ];
 
     public function requester()

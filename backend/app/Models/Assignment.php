@@ -17,6 +17,7 @@ class Assignment extends Model
         'status',
         'note',
         'assigned_at',
+        'expected_return_date',
         'confirmed_at',
         'returned_at',
         'returned_by',
@@ -31,6 +32,7 @@ class Assignment extends Model
     protected $casts = [
         'is_emergency' => 'boolean',
         'assigned_at' => 'datetime',
+        'expected_return_date' => 'date:Y-m-d',
         'confirmed_at' => 'datetime',
         'returned_at' => 'datetime',
         'return_requested_at' => 'datetime',
@@ -60,6 +62,11 @@ class Assignment extends Model
     public function cancelledBy()
     {
         return $this->belongsTo(User::class, 'cancelled_by');
+    }
+
+    public function lostReport()
+    {
+        return $this->hasOne(LostReport::class, 'assignment_id');
     }
 
     public function request()

@@ -54,9 +54,12 @@ class EmergencyAllocationController extends Controller
         $request->validate([
             'asset_id' => 'required|exists:assets,id',
             'user_id' => 'required|exists:users,id,is_active,1',
+            'expected_return_date' => 'required|date|after_or_equal:today',
             'reason' => 'required|string|min:10|max:1000',
         ], [
             'user_id.exists' => 'Nhân viên không tồn tại hoặc tài khoản đang bị khóa.',
+            'expected_return_date.required' => 'Vui lòng chọn ngày dự kiến trả thiết bị.',
+            'expected_return_date.after_or_equal' => 'Ngày dự kiến trả không được nhỏ hơn ngày hiện tại.',
             'reason.min' => 'Lý do cấp phát khẩn cấp cần tối thiểu 10 ký tự.',
         ]);
 
@@ -71,11 +74,7 @@ class EmergencyAllocationController extends Controller
             }
 
             if ($asset->status !== 'new') {
-                $this->abortWith('Chỉ có thể cấp phát khẩn cấp thiết bị đang rảnh trong kho.', 400);
-            }
-
-            if ($asset->department_id !== null) {
-                $this->abortWith('Chi co the cap phat khan cap thiet bi dang nam trong kho tong, chua gan phong ban.', 400);
+                $this->abortWith('Chỉ có thể cấp phát khẩn cấp thiết bị đang rảnh.', 400);
             }
 
             $hasOpenAssignment = Assignment::where('asset_id', $asset->id)
@@ -107,6 +106,7 @@ class EmergencyAllocationController extends Controller
                 'status' => 'waiting',
                 'note' => $note,
                 'assigned_at' => now(),
+                'expected_return_date' => $request->expected_return_date,
             ]);
 
             $asset->update([
