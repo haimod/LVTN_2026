@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
-import { Button, Card, Col, Form, Input, notification, Row, Select, Space, Table, Tag, Typography } from 'antd';
-import { ThunderboltOutlined, ReloadOutlined } from '@ant-design/icons';
+import { useEffect, useMemo, useState } from 'react';
+import { Button, Card, Col, DatePicker, Descriptions, Form, Input, Modal, notification, Row, Select, Space, Table, Tag, Typography } from 'antd';
+import { EyeOutlined, ThunderboltOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import axiosInstance from '../../utils/axiosInstance';
 
@@ -13,15 +13,24 @@ const statusMap = {
 };
 
 const formatDateTime = (value) => (value ? dayjs(value).format('DD/MM/YYYY HH:mm') : '-');
+const formatDate = (value) => (value ? dayjs(value).format('DD/MM/YYYY') : '-');
+const renderStatus = (status) => {
+  const current = statusMap[status] || { color: 'default', text: status || '-' };
+  return <Tag color={current.color}>{current.text}</Tag>;
+};
 
 const AdminEmergencyAllocationPage = () => {
   const [form] = Form.useForm();
   const [users, setUsers] = useState([]);
   const [assets, setAssets] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [allocations, setAllocations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  const [viewingAllocation, setViewingAllocation] = useState(null);
+  const [assetKeyword, setAssetKeyword] = useState('');
+  const [assetCategoryId, setAssetCategoryId] = useState(null);
 
   useEffect(() => {
     let ignore = false;
@@ -30,24 +39,27 @@ const AdminEmergencyAllocationPage = () => {
       setLoading(true);
 
       try {
-        const [usersRes, assetsRes, allocationsRes] = await Promise.all([
+        const [usersRes, assetsRes, categoriesRes, allocationsRes] = await Promise.all([
           axiosInstance.get('/users'),
-          axiosInstance.get('/assets', { params: { status: 'new', department_id: 'warehouse' } }),
+          axiosInstance.get('/assets', { params: { status: 'new' } }),
+          axiosInstance.get('/categories'),
           axiosInstance.get('/emergency-allocations'),
         ]);
 
         if (!ignore) {
           const userData = usersRes.data.data ? usersRes.data.data : usersRes.data;
           const assetData = assetsRes.data.data ? assetsRes.data.data : assetsRes.data;
+          const categoryData = categoriesRes.data.data ? categoriesRes.data.data : categoriesRes.data;
           const allocationData = allocationsRes.data.data ? allocationsRes.data.data : allocationsRes.data;
 
           setUsers(Array.isArray(userData) ? userData.filter((user) => user.is_active === 1 || user.is_active === true) : []);
           setAssets(Array.isArray(assetData) ? assetData : []);
+          setCategories(Array.isArray(categoryData) ? categoryData : []);
           setAllocations(Array.isArray(allocationData) ? allocationData : []);
         }
       } catch {
         if (!ignore) {
-          notification.error({ message: 'Không thể tải dữ liệu cấp phát khẩn cấp' });
+          notification.error({ title: 'Không thể tải dữ liệu cấp phát khẩn cấp' });
         }
       } finally {
         if (!ignore) {
@@ -64,18 +76,39 @@ const AdminEmergencyAllocationPage = () => {
   }, [reloadKey]);
 
   const refreshData = () => setReloadKey((current) => current + 1);
+  const filteredAssets = useMemo(() => {
+    const keyword = assetKeyword.trim().toLowerCase();
+
+    return assets.filter((asset) => {
+      const matchesCategory = !assetCategoryId || String(asset.category_id) === String(assetCategoryId);
+      const searchableText = [
+        asset.asset_code,
+        asset.name,
+        asset.category?.name,
+        asset.department?.name || 'Kho tổng',
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+
+      return matchesCategory && (!keyword || searchableText.includes(keyword));
+    });
+  }, [assets, assetCategoryId, assetKeyword]);
 
   const handleCreate = async () => {
     try {
       const values = await form.validateFields();
       setSaving(true);
-      await axiosInstance.post('/emergency-allocations', values);
-      notification.success({ message: 'Đã tạo phiếu cấp phát khẩn cấp' });
+      await axiosInstance.post('/emergency-allocations', {
+        ...values,
+        expected_return_date: values.expected_return_date.format('YYYY-MM-DD'),
+      });
+      notification.success({ title: 'Đã tạo phiếu cấp phát khẩn cấp' });
       form.resetFields();
       refreshData();
     } catch (error) {
       const message = error.response?.data?.message || 'Vui lòng kiểm tra lại thông tin cấp phát.';
-      notification.error({ message: 'Không thể cấp phát khẩn cấp', description: message });
+      notification.error({ title: 'Không thể cấp phát khẩn cấp', description: message });
     } finally {
       setSaving(false);
     }
@@ -114,10 +147,7 @@ const AdminEmergencyAllocationPage = () => {
       dataIndex: 'status',
       key: 'status',
       align: 'center',
-      render: (status) => {
-        const current = statusMap[status] || { color: 'default', text: status || '-' };
-        return <Tag color={current.color}>{current.text}</Tag>;
-      },
+      render: renderStatus,
     },
     {
       title: 'Người cấp phát',
@@ -131,11 +161,29 @@ const AdminEmergencyAllocationPage = () => {
       render: formatDateTime,
     },
     {
+      title: 'Dự kiến trả',
+      dataIndex: 'expected_return_date',
+      key: 'expected_return_date',
+      width: 130,
+      render: formatDate,
+    },
+    {
       title: 'Lý do',
       dataIndex: 'note',
       key: 'note',
       ellipsis: true,
       render: (value) => value || '-',
+    },
+    {
+      title: 'Thao tác',
+      key: 'action',
+      fixed: 'right',
+      width: 120,
+      render: (_, record) => (
+        <Button icon={<EyeOutlined />} onClick={() => setViewingAllocation(record)}>
+          Chi tiết
+        </Button>
+      ),
     },
   ];
 
@@ -168,18 +216,54 @@ const AdminEmergencyAllocationPage = () => {
             </Col>
 
             <Col xs={24} md={8}>
+              <Form.Item label="Lọc danh mục">
+                <Select
+                  placeholder="Tất cả danh mục"
+                  allowClear
+                  value={assetCategoryId}
+                  showSearch
+                  optionFilterProp="label"
+                  onChange={(value) => {
+                    setAssetCategoryId(value || null);
+                    form.setFieldsValue({ asset_id: undefined });
+                  }}
+                  options={categories.map((category) => ({
+                    value: category.id,
+                    label: category.name,
+                  }))}
+                />
+              </Form.Item>
+            </Col>
+
+            <Col xs={24} md={8}>
+              <Form.Item label="Tìm thiết bị">
+                <Input.Search
+                  allowClear
+                  value={assetKeyword}
+                  placeholder="Nhập mã, tên, danh mục hoặc phòng ban"
+                  onChange={(event) => setAssetKeyword(event.target.value)}
+                  onSearch={(value) => setAssetKeyword(value)}
+                />
+              </Form.Item>
+            </Col>
+
+            <Col xs={24} md={8}>
               <Form.Item
                 name="asset_id"
                 label="Thiết bị đang rảnh"
+                extra={`Đang hiển thị ${filteredAssets.length}/${assets.length} thiết bị rảnh`}
                 rules={[{ required: true, message: 'Vui lòng chọn thiết bị cấp phát' }]}
               >
                 <Select
-                  placeholder="Chọn thiết bị"
+                  placeholder="Chọn thiết bị từ kết quả lọc"
                   showSearch
                   optionFilterProp="label"
-                  options={assets.map((asset) => ({
+                  filterOption={(input, option) => (
+                    option?.label?.toLowerCase().includes(input.toLowerCase())
+                  )}
+                  options={filteredAssets.map((asset) => ({
                     value: asset.id,
-                    label: `${asset.asset_code} - ${asset.name} (${asset.category?.name || 'Không rõ danh mục'})`,
+                    label: `${asset.asset_code} - ${asset.name} (${asset.category?.name || 'Không rõ danh mục'} · ${asset.department?.name || 'Kho tổng'})`,
                   }))}
                   notFoundContent="Không có thiết bị rảnh"
                 />
@@ -196,6 +280,21 @@ const AdminEmergencyAllocationPage = () => {
                 ]}
               >
                 <Input.TextArea rows={1} placeholder="VD: Thiết bị hỏng đột xuất, cần máy thay thế ngay..." />
+              </Form.Item>
+            </Col>
+
+            <Col xs={24} md={8}>
+              <Form.Item
+                name="expected_return_date"
+                label="Ngày dự kiến trả"
+                rules={[{ required: true, message: 'Vui lòng chọn ngày dự kiến trả' }]}
+              >
+                <DatePicker
+                  format="DD/MM/YYYY"
+                  placeholder="Chọn ngày trả dự kiến"
+                  style={{ width: '100%' }}
+                  disabledDate={(current) => current && current < dayjs().startOf('day')}
+                />
               </Form.Item>
             </Col>
           </Row>
@@ -216,9 +315,61 @@ const AdminEmergencyAllocationPage = () => {
           rowKey="id"
           loading={loading}
           pagination={{ pageSize: 8 }}
-          scroll={{ x: 1050 }}
+          scroll={{ x: 1180 }}
         />
       </Card>
+
+      <Modal
+        title={viewingAllocation ? `Chi tiết BG-${String(viewingAllocation.id).padStart(5, '0')}` : 'Chi tiết phiếu cấp phát khẩn cấp'}
+        open={!!viewingAllocation}
+        onCancel={() => setViewingAllocation(null)}
+        footer={<Button onClick={() => setViewingAllocation(null)}>Đóng</Button>}
+        width={760}
+      >
+        {viewingAllocation ? (
+          <Space direction="vertical" size={16} style={{ width: '100%', marginTop: 8 }}>
+            <Descriptions bordered size="small" column={1}>
+              <Descriptions.Item label="Mã phiếu">
+                <strong>BG-{String(viewingAllocation.id).padStart(5, '0')}</strong>
+              </Descriptions.Item>
+              <Descriptions.Item label="Trạng thái">{renderStatus(viewingAllocation.status)}</Descriptions.Item>
+              <Descriptions.Item label="Thiết bị">
+                {viewingAllocation.asset?.asset_code || '-'} - {viewingAllocation.asset?.name || '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label="Danh mục">
+                {viewingAllocation.asset?.category?.name || '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label="Người nhận">
+                {viewingAllocation.user?.name || '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label="Email người nhận">
+                {viewingAllocation.user?.email || '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label="Phòng ban">
+                {viewingAllocation.user?.department?.name || '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label="Người cấp phát">
+                {viewingAllocation.assigned_by?.name || viewingAllocation.assignedBy?.name || '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label="Thời điểm cấp">
+                {formatDateTime(viewingAllocation.assigned_at)}
+              </Descriptions.Item>
+              <Descriptions.Item label="Thời điểm xác nhận">
+                {formatDateTime(viewingAllocation.confirmed_at)}
+              </Descriptions.Item>
+              <Descriptions.Item label="Ngày dự kiến trả">
+                {formatDate(viewingAllocation.expected_return_date)}
+              </Descriptions.Item>
+              <Descriptions.Item label="Ngày trả thực tế">
+                {formatDateTime(viewingAllocation.returned_at)}
+              </Descriptions.Item>
+              <Descriptions.Item label="Ghi chú / lý do khẩn cấp">
+                {viewingAllocation.note || '-'}
+              </Descriptions.Item>
+            </Descriptions>
+          </Space>
+        ) : null}
+      </Modal>
     </Space>
   );
 };

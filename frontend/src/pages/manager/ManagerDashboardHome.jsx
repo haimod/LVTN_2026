@@ -28,6 +28,7 @@ const assetStatusMap = {
 };
 
 const formatDateTime = (value) => (value ? dayjs(value).format('DD/MM/YYYY HH:mm') : '-');
+const formatDate = (value) => (value ? dayjs(value).format('DD/MM/YYYY') : '-');
 const getAssetStatus = (status) => assetStatusMap[status] || { color: 'default', text: status || '-' };
 
 const StatCard = ({ icon, label, value, loading }) => (
@@ -188,7 +189,9 @@ const ManagerDashboardHome = () => {
                           description={
                             <Space direction="vertical" size={2}>
                               <Text>{item.requester_name || '-'} · {item.category_name || '-'}</Text>
+                              <Text type="secondary">{item.requested_specification || '-'}</Text>
                               <Text type="secondary">Gửi lúc {formatDateTime(item.created_at)}</Text>
+                              <Text type="secondary">Dự kiến trả {formatDate(item.expected_return_date)}</Text>
                             </Space>
                           }
                         />
@@ -253,7 +256,12 @@ const ManagerDashboardHome = () => {
                               <Tag color={assetStatus.color}>{assetStatus.text}</Tag>
                             </Space>
                           }
-                          description={<Text type="secondary">{item.asset_name || '-'} · {formatDateTime(item.assigned_at)}</Text>}
+                          description={(
+                            <Space direction="vertical" size={0}>
+                              <Text type="secondary">{item.asset_name || '-'} · {formatDateTime(item.assigned_at)}</Text>
+                              <Text type="secondary">Dự kiến trả {formatDate(item.expected_return_date)}</Text>
+                            </Space>
+                          )}
                         />
                       </List.Item>
                     );
@@ -283,7 +291,7 @@ const ManagerDashboardHome = () => {
           </Col>
           <Col xs={24} sm={12} lg={6}>
             <Button block icon={<QrcodeOutlined />} onClick={() => navigate('/employee/handover')}>
-              Xác nhận bàn giao
+              Quét QR thiết bị
             </Button>
           </Col>
           <Col xs={24} sm={12} lg={6}>

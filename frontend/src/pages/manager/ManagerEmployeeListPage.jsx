@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Card, Col, Empty, Input, Row, Select, Space, Table, Tag, Typography, notification } from 'antd';
-import { CheckCircleOutlined, StopOutlined, TeamOutlined } from '@ant-design/icons';
+import { Button, Card, Col, Descriptions, Empty, Input, Modal, Row, Select, Space, Table, Tag, Typography, notification } from 'antd';
+import { CheckCircleOutlined, EyeOutlined, StopOutlined, TeamOutlined } from '@ant-design/icons';
 import axiosInstance from '../../utils/axiosInstance';
 
 const { Title, Text } = Typography;
 
 const getRoleText = (record) => record.roles?.[0]?.name || '-';
+const getEmployeeCode = (id) => `NV-${String(id).padStart(5, '0')}`;
+const isActive = (value) => value === 1 || value === true;
 
 const ManagerEmployeeListPage = () => {
   const [employees, setEmployees] = useState([]);
@@ -14,6 +16,7 @@ const ManagerEmployeeListPage = () => {
     search: '',
     status: null,
   });
+  const [selectedEmployee, setSelectedEmployee] = useState(null);
 
   useEffect(() => {
     let ignore = false;
@@ -33,7 +36,7 @@ const ManagerEmployeeListPage = () => {
         }
       } catch {
         if (!ignore) {
-          notification.error({ message: 'Không thể tải danh sách nhân viên phòng ban' });
+          notification.error({ title: 'Không thể tải danh sách nhân viên phòng ban' });
         }
       } finally {
         if (!ignore) {
@@ -67,7 +70,7 @@ const ManagerEmployeeListPage = () => {
       dataIndex: 'id',
       key: 'id',
       width: 130,
-      render: (id) => <strong>NV-{String(id).padStart(5, '0')}</strong>,
+      render: (id) => <strong>{getEmployeeCode(id)}</strong>,
     },
     {
       title: 'Nhân viên',
@@ -101,9 +104,20 @@ const ManagerEmployeeListPage = () => {
       key: 'is_active',
       align: 'center',
       render: (value) => (
-        value === 1 || value === true
+        isActive(value)
           ? <Tag color="green">Đang hoạt động</Tag>
           : <Tag color="red">Đã khóa</Tag>
+      ),
+    },
+    {
+      title: 'Thao tác',
+      key: 'action',
+      align: 'center',
+      width: 110,
+      render: (_, record) => (
+        <Button icon={<EyeOutlined />} onClick={() => setSelectedEmployee(record)}>
+          Chi tiết
+        </Button>
       ),
     },
   ];
@@ -191,10 +205,34 @@ const ManagerEmployeeListPage = () => {
           rowKey="id"
           loading={loading}
           pagination={{ pageSize: 8 }}
-          scroll={{ x: 900 }}
+          scroll={{ x: 980 }}
           locale={{ emptyText: <Empty description="Không có nhân viên trong phòng ban" /> }}
         />
       </Card>
+
+      <Modal
+        title={selectedEmployee ? `Chi tiết ${getEmployeeCode(selectedEmployee.id)}` : 'Chi tiết nhân viên'}
+        open={!!selectedEmployee}
+        onCancel={() => setSelectedEmployee(null)}
+        footer={<Button onClick={() => setSelectedEmployee(null)}>Đóng</Button>}
+        width={720}
+      >
+        {selectedEmployee ? (
+          <Descriptions bordered size="small" column={1} style={{ marginTop: 8 }}>
+            <Descriptions.Item label="Mã nhân viên">{getEmployeeCode(selectedEmployee.id)}</Descriptions.Item>
+            <Descriptions.Item label="Họ tên">{selectedEmployee.name || '-'}</Descriptions.Item>
+            <Descriptions.Item label="Email">{selectedEmployee.email || '-'}</Descriptions.Item>
+            <Descriptions.Item label="Số điện thoại">{selectedEmployee.phone || '-'}</Descriptions.Item>
+            <Descriptions.Item label="Phòng ban">{selectedEmployee.department?.name || '-'}</Descriptions.Item>
+            <Descriptions.Item label="Chức vụ">{getRoleText(selectedEmployee)}</Descriptions.Item>
+            <Descriptions.Item label="Trạng thái">
+              {isActive(selectedEmployee.is_active)
+                ? <Tag color="green">Đang hoạt động</Tag>
+                : <Tag color="red">Đã khóa</Tag>}
+            </Descriptions.Item>
+          </Descriptions>
+        ) : null}
+      </Modal>
     </Space>
   );
 };

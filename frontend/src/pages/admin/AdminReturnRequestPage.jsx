@@ -13,6 +13,7 @@ const statusMap = {
 };
 
 const formatDateTime = (value) => (value ? dayjs(value).format('DD/MM/YYYY HH:mm') : '-');
+const formatDate = (value) => (value ? dayjs(value).format('DD/MM/YYYY') : '-');
 
 const getImageUrl = (path) => {
   if (!path) return null;
@@ -156,6 +157,13 @@ const AdminReturnRequestPage = ({ defaultStatus = 'pending' }) => {
       render: formatDateTime,
     },
     {
+      title: 'Dự kiến trả',
+      dataIndex: 'expected_return_date',
+      key: 'expected_return_date',
+      width: 130,
+      render: formatDate,
+    },
+    {
       title: 'Ngày nhận lại',
       dataIndex: 'returned_at',
       key: 'returned_at',
@@ -260,7 +268,7 @@ const AdminReturnRequestPage = ({ defaultStatus = 'pending' }) => {
           rowKey="id"
           loading={loading}
           pagination={{ pageSize: 8 }}
-          scroll={{ x: 1400 }}
+          scroll={{ x: 1530 }}
           locale={{ emptyText: <Empty description="Chưa có phiếu thu hồi" /> }}
         />
       </Card>

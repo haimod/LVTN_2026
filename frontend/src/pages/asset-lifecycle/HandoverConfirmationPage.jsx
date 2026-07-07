@@ -28,6 +28,12 @@ const normUploadFile = (event) => {
 };
 
 const formatDateTime = (value) => (value ? dayjs(value).format('DD/MM/YYYY HH:mm') : '-');
+const formatDate = (value) => (value ? dayjs(value).format('DD/MM/YYYY') : '-');
+const MAX_DAMAGE_IMAGE_SIZE = 1.8 * 1024 * 1024;
+const MAX_DAMAGE_IMAGE_DIMENSION = 1600;
+
+const isLocalhost = () => ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
+const isCameraBlockedByContext = () => !window.isSecureContext && !isLocalhost();
 
 const getApiOrigin = () => {
   try {
@@ -43,6 +49,57 @@ const getImageUrl = (path) => {
   if (!path) return null;
   if (/^https?:\/\//i.test(path)) return path;
   return `${apiOrigin}/${path.replace(/^\/+/, '')}`;
+};
+
+const loadImageElement = (file) => new Promise((resolve, reject) => {
+  const image = document.createElement('img');
+  const objectUrl = URL.createObjectURL(file);
+
+  image.onload = () => {
+    URL.revokeObjectURL(objectUrl);
+    resolve(image);
+  };
+
+  image.onerror = () => {
+    URL.revokeObjectURL(objectUrl);
+    reject(new Error('Cannot load image'));
+  };
+
+  image.src = objectUrl;
+});
+
+const canvasToBlob = (canvas, type, quality) => new Promise((resolve) => {
+  canvas.toBlob(resolve, type, quality);
+});
+
+const prepareDamageImage = async (file) => {
+  if (!file || file.size <= MAX_DAMAGE_IMAGE_SIZE) {
+    return file;
+  }
+
+  const image = await loadImageElement(file);
+  const ratio = Math.min(1, MAX_DAMAGE_IMAGE_DIMENSION / Math.max(image.width, image.height));
+  const width = Math.max(1, Math.round(image.width * ratio));
+  const height = Math.max(1, Math.round(image.height * ratio));
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+
+  const context = canvas.getContext('2d');
+  context.fillStyle = '#fff';
+  context.fillRect(0, 0, width, height);
+  context.drawImage(image, 0, 0, width, height);
+
+  const compressedBlob = await canvasToBlob(canvas, 'image/jpeg', 0.82);
+
+  if (!compressedBlob) {
+    return file;
+  }
+
+  return new File([compressedBlob], `${file.name.replace(/\.[^.]+$/, '') || 'damage-photo'}.jpg`, {
+    type: 'image/jpeg',
+    lastModified: Date.now(),
+  });
 };
 
 const HandoverConfirmationPage = () => {
@@ -110,6 +167,20 @@ const HandoverConfirmationPage = () => {
   }, []);
 
   const startCamera = async () => {
+    if (isCameraBlockedByContext()) {
+      notification.warning({
+        message: 'Trình duyệt đang chặn camera',
+        description: 'Camera trực tiếp trên điện thoại cần HTTPS. Với mạng nội bộ, hãy dùng camera điện thoại quét tem QR để mở link, hoặc nhập/dán mã QR vào ô kiểm tra.',
+        duration: 6,
+      });
+      return;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      notification.warning({ message: 'Trình duyệt này không hỗ trợ mở camera trực tiếp.' });
+      return;
+    }
+
     if (!('BarcodeDetector' in window)) {
       notification.warning({ message: 'Trình duyệt này chưa hỗ trợ quét QR trực tiếp. Bạn có thể dùng camera điện thoại quét tem để mở link.' });
       return;
@@ -195,15 +266,20 @@ const HandoverConfirmationPage = () => {
       payload.append('asset_uuid', asset.uuid);
       payload.append('description', values.description);
 
-      const imageFile = values.image?.[0]?.originFileObj;
+      const imageFile = values.image?.[0]?.originFileObj || values.image?.[0];
       if (imageFile) {
-        payload.append('image', imageFile);
+        const preparedImage = await prepareDamageImage(imageFile);
+
+        if (preparedImage.size > MAX_DAMAGE_IMAGE_SIZE) {
+          notification.error({ message: 'Ảnh quá lớn', description: 'Vui lòng chọn ảnh nhỏ hơn 2MB hoặc chụp lại ảnh rõ hơn.' });
+          return;
+        }
+
+        payload.append('image', preparedImage, preparedImage.name || 'damage-photo.jpg');
       }
 
       setReporting(true);
-      await axiosInstance.post('/maintenance-records/report', payload, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      await axiosInstance.post('/maintenance-records/report', payload);
 
       notification.success({ message: 'Đã gửi phiếu báo hỏng thiết bị' });
       window.dispatchEvent(new Event('notifications-updated'));
@@ -299,9 +375,53 @@ const HandoverConfirmationPage = () => {
 
     if (result?.can_confirm) {
       return (
-        <Button type="primary" icon={<CheckOutlined />} loading={confirming} onClick={handleConfirm}>
-          Xác nhận nhận tài sản
-        </Button>
+        <div style={{ border: '1px solid #d9f7be', background: '#fcfffa', borderRadius: 8, padding: 16 }}>
+          <Space direction="vertical" size={12} style={{ width: '100%' }}>
+            <div>
+              <Title level={5} style={{ margin: 0 }}>Phiếu xác nhận nhận thiết bị</Title>
+              <Text type="secondary">Chỉ bấm xác nhận khi đúng thiết bị thực tế và đúng người đang đăng nhập.</Text>
+            </div>
+
+            <Form layout="vertical">
+              <Row gutter={[12, 0]}>
+                <Col xs={24} md={8}>
+                  <Form.Item label="Mã tài sản" style={{ marginBottom: 8 }}>
+                    <Input value={asset.asset_code || '-'} disabled />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={16}>
+                  <Form.Item label="Tên thiết bị" style={{ marginBottom: 8 }}>
+                    <Input value={asset.name || '-'} disabled />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={8}>
+                  <Form.Item label="Danh mục" style={{ marginBottom: 8 }}>
+                    <Input value={asset.category?.name || '-'} disabled />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={8}>
+                  <Form.Item label="Người nhận" style={{ marginBottom: 8 }}>
+                    <Input value={assignment?.user?.name || '-'} disabled />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={8}>
+                  <Form.Item label="Trạng thái hiện tại" style={{ marginBottom: 8 }}>
+                    <Input value={assetStatusMap[asset.status]?.text || asset.status || '-'} disabled />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={8}>
+                  <Form.Item label="Ngày dự kiến trả" style={{ marginBottom: 8 }}>
+                    <Input value={formatDate(assignment?.expected_return_date)} disabled />
+                  </Form.Item>
+                </Col>
+              </Row>
+            </Form>
+
+            <Button type="primary" icon={<CheckOutlined />} loading={confirming} onClick={handleConfirm}>
+              Xác nhận nhận tài sản
+            </Button>
+          </Space>
+        </div>
       );
     }
 
@@ -380,6 +500,7 @@ const HandoverConfirmationPage = () => {
                 <Descriptions.Item label="Người được cấp phát">{assignment?.user?.name || '-'}</Descriptions.Item>
                 <Descriptions.Item label="Người cấp phát">{assignment?.assigned_by?.name || assignment?.assignedBy?.name || '-'}</Descriptions.Item>
                 <Descriptions.Item label="Ngày cấp phát">{formatDateTime(assignment?.assigned_at)}</Descriptions.Item>
+                <Descriptions.Item label="Ngày dự kiến trả">{formatDate(assignment?.expected_return_date)}</Descriptions.Item>
                 <Descriptions.Item label="Ngày xác nhận">{formatDateTime(assignment?.confirmed_at)}</Descriptions.Item>
                 <Descriptions.Item label="Hạn xác nhận">{session?.expires_at ? dayjs(session.expires_at).format('DD/MM/YYYY HH:mm:ss') : '-'}</Descriptions.Item>
               </Descriptions>
@@ -430,6 +551,15 @@ const HandoverConfirmationPage = () => {
                   </Space>
                 </Form>
 
+                {isCameraBlockedByContext() ? (
+                  <Alert
+                    type="warning"
+                    showIcon
+                    message="Camera trực tiếp cần HTTPS"
+                    description="Khi mở bằng địa chỉ mạng nội bộ, điện thoại có thể chặn camera trong trình duyệt. Hãy quét tem QR bằng camera hệ điều hành để mở link thiết bị."
+                  />
+                ) : null}
+
                 {cameraActive ? (
                   <video
                     ref={videoRef}
@@ -479,12 +609,13 @@ const HandoverConfirmationPage = () => {
             getValueFromEvent={normUploadFile}
           >
             <Upload
-              accept="image/png,image/jpeg,image/webp"
+              accept="image/*"
+              capture="environment"
               beforeUpload={() => false}
               maxCount={1}
               listType="picture"
             >
-              <Button icon={<UploadOutlined />}>Chọn ảnh</Button>
+              <Button icon={<UploadOutlined />}>Chọn/chụp ảnh</Button>
             </Upload>
           </Form.Item>
         </Form>

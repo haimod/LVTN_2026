@@ -42,6 +42,7 @@ const assetStatusMap = {
 };
 
 const formatDateTime = (value) => (value ? dayjs(value).format('DD/MM/YYYY HH:mm') : '-');
+const formatDate = (value) => (value ? dayjs(value).format('DD/MM/YYYY') : '-');
 
 const getApiOrigin = () => {
   try {
@@ -261,6 +262,7 @@ const EmployeeDashboardHome = () => {
                             <Space direction="vertical" size={2}>
                               <Text>{item.asset_name || '-'}</Text>
                               <Text type="secondary">{item.category_name || '-'} · Cấp phát {formatDateTime(item.assigned_at)}</Text>
+                              <Text type="secondary">Dự kiến trả {formatDate(item.expected_return_date)}</Text>
                             </Space>
                           }
                         />
@@ -301,7 +303,9 @@ const EmployeeDashboardHome = () => {
                           description={
                             <Space direction="vertical" size={2}>
                               <Text>{item.category_name || 'Thiết bị chưa xác định'}</Text>
+                              <Text type="secondary">{item.requested_specification || '-'}</Text>
                               <Text type="secondary">Gửi lúc {formatDateTime(item.created_at)}</Text>
+                              <Text type="secondary">Dự kiến trả {formatDate(item.expected_return_date)}</Text>
                             </Space>
                           }
                         />

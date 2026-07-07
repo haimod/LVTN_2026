@@ -26,7 +26,7 @@ const Login = () => {
         }
 
         notification.success({
-          message: 'Thành công',
+          title: 'Thành công',
           description: 'Đăng nhập thành công.',
           placement: 'topRight',
           duration: 2,
@@ -40,7 +40,7 @@ const Login = () => {
         : 'Không thể kết nối đến máy chủ!';
 
       notification.error({
-        message: 'Lỗi đăng nhập',
+        title: 'Lỗi đăng nhập',
         description: errorMessage,
         placement: 'topRight',
         duration: 3,

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Button, Card, Col, Form, Input, Modal, notification, Row, Select, Table, Tag } from 'antd';
-import { PlusOutlined, ReloadOutlined } from '@ant-design/icons';
+import { Button, Card, Col, DatePicker, Descriptions, Form, Input, Modal, notification, Row, Select, Space, Table, Tag } from 'antd';
+import { EyeOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import axiosInstance from '../../utils/axiosInstance';
 
@@ -14,6 +14,7 @@ const statusMap = {
 };
 
 const formatDateTime = (value) => (value ? dayjs(value).format('DD/MM/YYYY HH:mm') : '-');
+const formatDate = (value) => (value ? dayjs(value).format('DD/MM/YYYY') : '-');
 
 const getCurrentUser = () => {
   try {
@@ -30,6 +31,7 @@ const AssignmentRequestPage = ({ requestScope = null, title = 'Yêu cầu mượ
   const [loading, setLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [viewingRequest, setViewingRequest] = useState(null);
   const [form] = Form.useForm();
   const user = getCurrentUser();
   const role = user?.role || user?.roles?.[0]?.name || 'user';
@@ -115,7 +117,10 @@ const AssignmentRequestPage = ({ requestScope = null, title = 'Yêu cầu mượ
     try {
       const values = await form.validateFields();
       setLoading(true);
-      await axiosInstance.post('/assignment-requests', values);
+      await axiosInstance.post('/assignment-requests', {
+        ...values,
+        expected_return_date: values.expected_return_date.format('YYYY-MM-DD'),
+      });
       notification.success({ message: 'Đã gửi yêu cầu mượn thiết bị' });
       setIsModalOpen(false);
       fetchRequests();
@@ -144,6 +149,20 @@ const AssignmentRequestPage = ({ requestScope = null, title = 'Yêu cầu mượ
       title: 'Thiết bị cần mượn',
       key: 'category',
       render: (_, record) => record.category?.name || '-',
+    },
+    {
+      title: 'Nhu cầu cụ thể',
+      dataIndex: 'requested_specification',
+      key: 'requested_specification',
+      ellipsis: true,
+      render: (value) => value || '-',
+    },
+    {
+      title: 'Dự kiến trả',
+      dataIndex: 'expected_return_date',
+      key: 'expected_return_date',
+      width: 130,
+      render: formatDate,
     },
     ...(!isSelfRequestView ? [
       {
@@ -182,6 +201,15 @@ const AssignmentRequestPage = ({ requestScope = null, title = 'Yêu cầu mượ
       ellipsis: true,
       render: (_, record) => record.manager_note || record.admin_note || '-',
     },
+    {
+      title: 'Thao tác',
+      key: 'action',
+      fixed: 'right',
+      width: 130,
+      render: (_, record) => (
+        <Button icon={<EyeOutlined />} onClick={() => setViewingRequest(record)}>Chi tiết</Button>
+      ),
+    },
   ];
 
   return (
@@ -215,8 +243,39 @@ const AssignmentRequestPage = ({ requestScope = null, title = 'Yêu cầu mượ
         rowKey="id"
         loading={loading}
         pagination={{ pageSize: 8 }}
-        scroll={{ x: 1000 }}
+        scroll={{ x: 1400 }}
       />
+
+      <Modal
+        title={viewingRequest ? `Chi tiết YC-${String(viewingRequest.id).padStart(5, '0')}` : 'Chi tiết yêu cầu'}
+        open={!!viewingRequest}
+        onCancel={() => setViewingRequest(null)}
+        footer={<Button onClick={() => setViewingRequest(null)}>Đóng</Button>}
+        width={720}
+      >
+        {viewingRequest ? (
+          <Space direction="vertical" size={16} style={{ width: '100%', marginTop: 8 }}>
+            <Descriptions bordered size="small" column={1}>
+              <Descriptions.Item label="Mã yêu cầu">YC-{String(viewingRequest.id).padStart(5, '0')}</Descriptions.Item>
+              <Descriptions.Item label="Trạng thái">{renderStatus(viewingRequest.status)}</Descriptions.Item>
+              <Descriptions.Item label="Thiết bị cần mượn">{viewingRequest.category?.name || '-'}</Descriptions.Item>
+              <Descriptions.Item label="Thiết bị/cấu hình mong muốn">{viewingRequest.requested_specification || '-'}</Descriptions.Item>
+              <Descriptions.Item label="Ngày dự kiến trả">{formatDate(viewingRequest.expected_return_date)}</Descriptions.Item>
+              <Descriptions.Item label="Lý do mượn">{viewingRequest.reason || '-'}</Descriptions.Item>
+              <Descriptions.Item label="Ngày gửi">{formatDateTime(viewingRequest.created_at)}</Descriptions.Item>
+              <Descriptions.Item label="Người gửi">{viewingRequest.requester?.name || user?.name || '-'}</Descriptions.Item>
+              <Descriptions.Item label="Email">{viewingRequest.requester?.email || user?.email || '-'}</Descriptions.Item>
+              <Descriptions.Item label="Phòng ban">{viewingRequest.requester?.department?.name || user?.department?.name || '-'}</Descriptions.Item>
+              <Descriptions.Item label="Trưởng phòng xử lý">{viewingRequest.manager?.name || '-'}</Descriptions.Item>
+              <Descriptions.Item label="Thời điểm trưởng phòng xử lý">{formatDateTime(viewingRequest.manager_at)}</Descriptions.Item>
+              <Descriptions.Item label="Ghi chú trưởng phòng">{viewingRequest.manager_note || '-'}</Descriptions.Item>
+              <Descriptions.Item label="Admin xử lý">{viewingRequest.admin?.name || '-'}</Descriptions.Item>
+              <Descriptions.Item label="Thời điểm admin xử lý">{formatDateTime(viewingRequest.admin_at)}</Descriptions.Item>
+              <Descriptions.Item label="Ghi chú admin">{viewingRequest.admin_note || '-'}</Descriptions.Item>
+            </Descriptions>
+          </Space>
+        ) : null}
+      </Modal>
 
       <Modal
         title="Tạo yêu cầu mượn thiết bị"
@@ -239,6 +298,31 @@ const AssignmentRequestPage = ({ requestScope = null, title = 'Yêu cầu mượ
                 <Select.Option key={category.id} value={category.id}>{category.name}</Select.Option>
               ))}
             </Select>
+          </Form.Item>
+
+          <Form.Item
+            name="requested_specification"
+            label="Thiết bị/cấu hình mong muốn"
+            extra="Không cần biết chính xác danh mục. Hãy mô tả nhu cầu, ví dụ: laptop chạy Excel/Teams, laptop chạy AutoCAD, màn hình 24 inch..."
+            rules={[
+              { required: true, message: 'Vui lòng mô tả thiết bị hoặc cấu hình mong muốn!' },
+              { min: 5, message: 'Mô tả cần tối thiểu 5 ký tự.' },
+            ]}
+          >
+            <Input.TextArea rows={3} placeholder="VD: Laptop để chạy Excel, họp Teams và làm báo cáo; ưu tiên máy nhẹ nếu còn." />
+          </Form.Item>
+
+          <Form.Item
+            name="expected_return_date"
+            label="Ngày dự kiến trả"
+            rules={[{ required: true, message: 'Vui lòng chọn ngày dự kiến trả!' }]}
+          >
+            <DatePicker
+              format="DD/MM/YYYY"
+              placeholder="Chọn ngày trả dự kiến"
+              style={{ width: '100%' }}
+              disabledDate={(current) => current && current < dayjs().startOf('day')}
+            />
           </Form.Item>
 
           <Form.Item

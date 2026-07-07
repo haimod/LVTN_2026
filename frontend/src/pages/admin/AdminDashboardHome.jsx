@@ -12,8 +12,8 @@ import {
   WarningOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
-import dayjs from 'dayjs';
 import axiosInstance from '../../utils/axiosInstance';
+import { formatVietnamDateTime } from '../../utils/dateTime';
 
 const { Title, Text } = Typography;
 
@@ -48,7 +48,7 @@ const levelConfig = {
   success: { color: '#389e0d', icon: <CheckCircleOutlined /> },
 };
 
-const formatDateTime = (value) => (value ? dayjs(value).format('DD/MM/YYYY HH:mm') : '-');
+const formatDateTime = formatVietnamDateTime;
 const getStatusText = (status) => statusMap[status]?.text || status || '-';
 
 const AdminDashboardHome = () => {
@@ -77,6 +77,7 @@ const AdminDashboardHome = () => {
   const workItems = useMemo(() => dashboard?.work_items || [], [dashboard]);
   const assetStatuses = useMemo(() => dashboard?.asset_statuses || [], [dashboard]);
   const recentActivities = dashboard?.recent_activities || [];
+  const recentActivityPreview = recentActivities.slice(0, 2);
   const quickLinks = dashboard?.quick_links || [];
 
   const assetTotals = useMemo(() => assetStatuses.reduce((current, item) => {
@@ -92,7 +93,7 @@ const AdminDashboardHome = () => {
       <Space style={{ width: '100%', justifyContent: 'space-between' }} align="start">
         <div>
           <Title level={3} style={{ margin: 0 }}>Tổng quan quản trị</Title>
-          <Text type="secondary">Theo dõi việc cần xử lý, tình trạng tài sản và hoạt động mới nhất.</Text>
+          <Text type="secondary">Theo dõi việc cần xử lý và tình trạng tài sản hiện tại.</Text>
         </div>
         <Button icon={<ReloadOutlined />} onClick={loadDashboard} loading={loading}>Làm mới</Button>
       </Space>
@@ -202,15 +203,15 @@ const AdminDashboardHome = () => {
       <Row gutter={[16, 16]}>
         <Col xs={24} xl={14}>
           <Card
-            title="Hoạt động gần đây"
-            extra={<Button type="link" icon={<HistoryOutlined />} onClick={() => navigate('/admin/assets')}>Xem tài sản</Button>}
+            title="Hoạt động mới"
+            extra={<Button type="link" icon={<HistoryOutlined />} onClick={() => navigate('/admin/activity-log')}>Xem nhật ký</Button>}
             bordered={false}
             style={{ borderRadius: 8 }}
           >
-            <Skeleton loading={loading} active paragraph={{ rows: 8 }}>
-              {recentActivities.length ? (
+            <Skeleton loading={loading} active paragraph={{ rows: 2 }}>
+              {recentActivityPreview.length ? (
                 <List
-                  dataSource={recentActivities}
+                  dataSource={recentActivityPreview}
                   renderItem={(item) => (
                     <List.Item>
                       <List.Item.Meta

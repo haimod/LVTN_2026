@@ -1,10 +1,13 @@
-import { Layout, Menu, Button, Avatar, Space, Typography } from 'antd';
+import { useEffect, useState } from 'react';
+import { Layout, Menu, Button, Avatar, Space, Typography, Drawer, Grid } from 'antd';
 import {
   AppstoreOutlined,
   BarChartOutlined,
   DashboardOutlined,
   FileDoneOutlined,
+  HistoryOutlined,
   LogoutOutlined,
+  MenuOutlined,
   RetweetOutlined,
   SettingOutlined,
   ThunderboltOutlined,
@@ -17,6 +20,7 @@ import axiosInstance from '../utils/axiosInstance';
 
 const { Header, Sider, Content } = Layout;
 const { Title, Text } = Typography;
+const { useBreakpoint } = Grid;
 
 const getCurrentUser = () => {
   try {
@@ -30,7 +34,22 @@ const getCurrentUser = () => {
 const AdminLayout = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const user = getCurrentUser();
+  const [user, setUser] = useState(getCurrentUser);
+  const screens = useBreakpoint();
+  const isMobile = !screens.md;
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => {
+    const syncUser = () => setUser(getCurrentUser());
+
+    window.addEventListener('storage', syncUser);
+    window.addEventListener('profile-updated', syncUser);
+
+    return () => {
+      window.removeEventListener('storage', syncUser);
+      window.removeEventListener('profile-updated', syncUser);
+    };
+  }, []);
 
   const handleLogout = async () => {
     try {
@@ -89,41 +108,83 @@ const AdminLayout = () => {
         { key: '/retrieval/liquidation', label: 'Phiếu thanh lý' },
       ],
     },
-    { key: '/admin/reports', icon: <BarChartOutlined />, label: 'Báo cáo kiểm kê' },
+    {
+      key: 'grp-reports',
+      icon: <BarChartOutlined />,
+      label: 'Báo cáo & nhật ký',
+      children: [
+        { key: '/admin/reports', label: 'Báo cáo kiểm kê' },
+        { key: '/admin/activity-log', icon: <HistoryOutlined />, label: 'Nhật ký hoạt động' },
+      ],
+    },
+    { key: '/admin/profile', icon: <UserOutlined />, label: 'Thông tin cá nhân' },
   ];
 
+  const handleMenuClick = ({ key }) => {
+    navigate(key);
+    setMenuOpen(false);
+  };
+
+  const menu = (
+    <Menu
+      mode="inline"
+      selectedKeys={[location.pathname]}
+      items={menuItems}
+      onClick={handleMenuClick}
+      style={{ borderInlineEnd: 0, paddingTop: 12 }}
+    />
+  );
+
   return (
-    <Layout style={{ minHeight: '100vh', background: '#f5f7fb' }}>
-      <Sider width={260} theme="light" style={{ borderRight: '1px solid #edf0f5' }}>
-        <div style={{ height: 72, padding: '16px 20px', borderBottom: '1px solid #edf0f5', lineHeight: '20px' }}>
-          <Title level={4} style={{ margin: 0, color: '#1677ff' }}>Admin Portal</Title>
-          <Text type="secondary">Kế toán tài sản</Text>
-        </div>
-
-        <Menu
-          mode="inline"
-          selectedKeys={[location.pathname]}
-          items={menuItems}
-          onClick={({ key }) => navigate(key)}
-          style={{ borderInlineEnd: 0, paddingTop: 12 }}
-        />
-      </Sider>
-
-      <Layout>
-        <Header style={{ height: 64, lineHeight: 'normal', padding: '0 24px', background: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #edf0f5' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, lineHeight: '20px' }}>
-            <Text type="secondary">Xin chào quản trị viên</Text>
-            <div style={{ fontWeight: 600, lineHeight: '20px' }}>{user?.name || 'Admin'}</div>
+    <Layout style={{ minHeight: '100vh', background: '#f5f7fb', minWidth: 0 }}>
+      {!isMobile ? (
+        <Sider width={260} theme="light" style={{ borderRight: '1px solid #edf0f5' }}>
+          <div style={{ height: 72, padding: '16px 20px', borderBottom: '1px solid #edf0f5', lineHeight: '20px' }}>
+            <Title level={4} style={{ margin: 0, color: '#1677ff' }}>Admin Portal</Title>
+            <Text type="secondary">Kế toán tài sản</Text>
           </div>
+
+          {menu}
+        </Sider>
+      ) : null}
+
+      <Drawer
+        title="Admin Portal"
+        placement="left"
+        open={isMobile && menuOpen}
+        onClose={() => setMenuOpen(false)}
+        width={280}
+        styles={{ body: { padding: 0 } }}
+      >
+        {menu}
+      </Drawer>
+
+      <Layout style={{ minWidth: 0 }}>
+        <Header style={{ minHeight: 64, height: 'auto', lineHeight: 'normal', padding: isMobile ? '10px 12px' : '0 24px', background: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', borderBottom: '1px solid #edf0f5' }}>
+          <Space size={12} align="center" style={{ minWidth: 0 }}>
+            {isMobile ? (
+              <Button icon={<MenuOutlined />} onClick={() => setMenuOpen(true)} aria-label="Mở menu" />
+            ) : null}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, lineHeight: '20px', minWidth: 0 }}>
+              <Text type="secondary">Xin chào quản trị viên</Text>
+              <div style={{ fontWeight: 600, lineHeight: '20px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: isMobile ? 180 : 'none' }}>{user?.name || 'Admin'}</div>
+            </div>
+          </Space>
 
           <Space size="middle">
             <NotificationBell />
-            <Avatar style={{ backgroundColor: '#1677ff' }} icon={<UserOutlined />} />
-            <Button danger icon={<LogoutOutlined />} onClick={handleLogout}>Đăng xuất</Button>
+            {!isMobile ? (
+              <Avatar
+                style={{ backgroundColor: '#1677ff', cursor: 'pointer' }}
+                icon={<UserOutlined />}
+                onClick={() => navigate('/admin/profile')}
+              />
+            ) : null}
+            <Button danger icon={<LogoutOutlined />} onClick={handleLogout}>{isMobile ? '' : 'Đăng xuất'}</Button>
           </Space>
         </Header>
 
-        <Content style={{ padding: 24, overflow: 'auto' }}>
+        <Content style={{ padding: isMobile ? 12 : 24, overflow: 'auto', minWidth: 0 }}>
           <Outlet />
         </Content>
       </Layout>

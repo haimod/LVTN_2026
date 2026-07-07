@@ -10,6 +10,7 @@ import AssignmentRequestPage from './pages/employee/AssignmentRequestPage';
 import ProfilePage from './pages/employee/ProfilePage';
 import BorrowHistoryPage from './pages/employee/BorrowHistoryPage';
 import AdminAssetListPage from './pages/admin/AdminAssetListPage';
+import AdminActivityLogPage from './pages/admin/AdminActivityLogPage';
 import AdminBorrowRequestPage from './pages/admin/AdminBorrowRequestPage';
 import AdminCategoryListPage from './pages/admin/AdminCategoryListPage';
 import AdminDepartmentListPage from './pages/admin/AdminDepartmentListPage';
@@ -17,6 +18,7 @@ import AdminEmergencyAllocationPage from './pages/admin/AdminEmergencyAllocation
 import AdminLiquidationPage from './pages/admin/AdminLiquidationPage';
 import AdminLostReportPage from './pages/admin/AdminLostReportPage';
 import AdminMaintenancePage from './pages/admin/AdminMaintenancePage';
+import AdminProfilePage from './pages/admin/AdminProfilePage';
 import AdminReportsPage from './pages/admin/AdminReportsPage';
 import AdminReturnRequestPage from './pages/admin/AdminReturnRequestPage';
 import AdminUserListPage from './pages/admin/AdminUserListPage';
@@ -55,7 +57,9 @@ function App() {
               <Route path="/retrieval/liquidation" element={<AdminLiquidationPage />} />
               <Route path="/admin/users" element={<AdminUserListPage />} />
               <Route path="/admin/departments" element={<AdminDepartmentListPage />} />
+              <Route path="/admin/profile" element={<AdminProfilePage />} />
               <Route path="/admin/reports" element={<AdminReportsPage />} />
+              <Route path="/admin/activity-log" element={<AdminActivityLogPage />} />
               <Route path="/system/users" element={<Navigate to="/admin/users" replace />} />
               <Route path="/system/departments" element={<Navigate to="/admin/departments" replace />} />
               <Route path="/assets/categories" element={<Navigate to="/admin/assets/categories" replace />} />

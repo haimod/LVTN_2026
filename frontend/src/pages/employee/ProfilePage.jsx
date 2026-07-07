@@ -33,7 +33,7 @@ const ProfilePage = () => {
         }
       } catch {
         if (!ignore) {
-          notification.error({ message: 'Không thể tải thông tin cá nhân' });
+          notification.error({ title: 'Không thể tải thông tin cá nhân' });
         }
       } finally {
         if (!ignore) {
@@ -76,10 +76,10 @@ const ProfilePage = () => {
         password: '',
         password_confirmation: '',
       });
-      notification.success({ message: 'Đã cập nhật thông tin cá nhân' });
+      notification.success({ title: 'Đã cập nhật thông tin cá nhân' });
     } catch (error) {
       const message = error.response?.data?.message || 'Vui lòng kiểm tra lại thông tin.';
-      notification.error({ message: 'Không thể cập nhật', description: message });
+      notification.error({ title: 'Không thể cập nhật', description: message });
     } finally {
       setSaving(false);
     }

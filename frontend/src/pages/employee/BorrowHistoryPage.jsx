@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Col, Empty, Form, Image, Input, Modal, Row, Select, Space, Table, Tag, Typography, notification } from 'antd';
-import { CheckCircleOutlined, ClockCircleOutlined, ExclamationCircleOutlined, HistoryOutlined, PictureOutlined, QrcodeOutlined, RollbackOutlined, ToolOutlined } from '@ant-design/icons';
+import { Button, Card, Col, Descriptions, Empty, Form, Image, Input, Modal, Row, Select, Space, Table, Tag, Typography, notification } from 'antd';
+import { CheckCircleOutlined, ClockCircleOutlined, ExclamationCircleOutlined, EyeOutlined, HistoryOutlined, PictureOutlined, QrcodeOutlined, RollbackOutlined, ToolOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import axiosInstance from '../../utils/axiosInstance';
@@ -14,7 +14,31 @@ const statusMap = {
   returned: { color: 'default', text: 'Đã trả' },
 };
 
+const lostStatusMap = {
+  pending: { color: 'volcano', text: 'Đang điều tra mất' },
+  recovered: { color: 'green', text: 'Đã tìm lại' },
+  permanently_lost: { color: 'black', text: 'Mất vĩnh viễn' },
+};
+
+const assetStatusMap = {
+  new: { color: 'blue', text: 'Trong kho' },
+  in_use: { color: 'green', text: 'Đang sử dụng' },
+  waiting: { color: 'gold', text: 'Chờ bàn giao/xử lý' },
+  repairing: { color: 'orange', text: 'Đang bảo trì' },
+  under_investigation: { color: 'volcano', text: 'Đang điều tra mất' },
+  permanently_lost: { color: 'black', text: 'Mất vĩnh viễn' },
+  disposed: { color: 'default', text: 'Đã thanh lý' },
+};
+
 const formatDateTime = (value) => (value ? dayjs(value).format('DD/MM/YYYY HH:mm') : '-');
+const formatDate = (value) => (value ? dayjs(value).format('DD/MM/YYYY') : '-');
+
+const isReturnOverdue = (record) => (
+  record.expected_return_date
+  && ['waiting', 'active'].includes(record.status)
+  && !record.return_requested_at
+  && dayjs(record.expected_return_date).isBefore(dayjs(), 'day')
+);
 
 const getImageUrl = (path) => {
   if (!path) return null;
@@ -53,6 +77,7 @@ const BorrowHistoryPage = () => {
     search: '',
   });
   const [lostReportRecord, setLostReportRecord] = useState(null);
+  const [viewingHistory, setViewingHistory] = useState(null);
   const [reportingLost, setReportingLost] = useState(false);
   const [lostForm] = Form.useForm();
 
@@ -110,6 +135,7 @@ const BorrowHistoryPage = () => {
 
   const openLostReportModal = (record) => {
     lostForm.resetFields();
+    setViewingHistory(null);
     setLostReportRecord(record);
   };
 
@@ -136,6 +162,30 @@ const BorrowHistoryPage = () => {
     } finally {
       setReportingLost(false);
     }
+  };
+
+  const getLostReport = (record) => record?.lost_report || record?.lostReport || null;
+
+  const renderLostStatus = (status) => {
+    const current = lostStatusMap[status] || { color: 'default', text: status || '-' };
+    return <Tag color={current.color}>{current.text}</Tag>;
+  };
+
+  const renderAssetStatus = (status) => {
+    const current = assetStatusMap[status] || { color: 'default', text: status || '-' };
+    return <Tag color={current.color}>{current.text}</Tag>;
+  };
+
+  const renderBorrowStatus = (record) => {
+    const current = statusMap[record.status] || { color: 'default', text: record.status || '-' };
+    const lostReport = getLostReport(record);
+
+    return (
+      <Space direction="vertical" size={4} align="center">
+        <Tag color={current.color}>{current.text}</Tag>
+        {lostReport ? renderLostStatus(lostReport.status) : null}
+      </Space>
+    );
   };
 
   const stats = useMemo(() => histories.reduce((current, item) => {
@@ -179,16 +229,25 @@ const BorrowHistoryPage = () => {
       dataIndex: 'status',
       key: 'status',
       align: 'center',
-      render: (status) => {
-        const current = statusMap[status] || { color: 'default', text: status || '-' };
-        return <Tag color={current.color}>{current.text}</Tag>;
-      },
+      render: (_, record) => renderBorrowStatus(record),
     },
     {
       title: 'Ngày cấp phát',
       dataIndex: 'assigned_at',
       key: 'assigned_at',
       render: formatDateTime,
+    },
+    {
+      title: 'Dự kiến trả',
+      dataIndex: 'expected_return_date',
+      key: 'expected_return_date',
+      width: 140,
+      render: (_, record) => (
+        <Space direction="vertical" size={0}>
+          <span>{formatDate(record.expected_return_date)}</span>
+          {isReturnOverdue(record) ? <Tag color="red">Quá hạn</Tag> : null}
+        </Space>
+      ),
     },
     {
       title: 'Ngày xác nhận',
@@ -218,37 +277,72 @@ const BorrowHistoryPage = () => {
       title: 'Thao tác',
       key: 'actions',
       fixed: 'right',
-      width: 220,
+      width: 280,
       render: (_, record) => {
+        const lostReport = getLostReport(record);
+        const detailButton = (
+          <Button size="small" icon={<EyeOutlined />} onClick={() => setViewingHistory(record)}>
+            Chi tiết
+          </Button>
+        );
+
         if (record.status === 'waiting') {
           return (
-            <Button
-              size="small"
-              type="primary"
-              icon={<QrcodeOutlined />}
-              disabled={!record.asset?.uuid}
-              onClick={() => navigate(`/employee/handover?code=${encodeURIComponent(record.asset.uuid)}`)}
-            >
-              Xác nhận
-            </Button>
+            <Space size="small" wrap>
+              {detailButton}
+              <Button
+                size="small"
+                type="primary"
+                icon={<QrcodeOutlined />}
+                disabled={!record.asset?.uuid}
+                onClick={() => navigate(`/employee/handover?code=${encodeURIComponent(record.asset.uuid)}`)}
+              >
+                Xác nhận
+              </Button>
+            </Space>
           );
         }
 
         if (record.status === 'active') {
+          if (lostReport) {
+            return (
+              <Space size="small" wrap>
+                {detailButton}
+                {renderLostStatus(lostReport.status)}
+              </Space>
+            );
+          }
+
           if (record.return_requested_at) {
-            return <Tag color="blue">Chờ admin nhận</Tag>;
+            return (
+              <Space size="small" wrap>
+                {detailButton}
+                <Tag color="blue">Chờ admin nhận</Tag>
+              </Space>
+            );
           }
 
           if (record.asset?.status === 'under_investigation') {
-            return <Tag color="volcano">Đang điều tra</Tag>;
+            return (
+              <Space size="small" wrap>
+                {detailButton}
+                <Tag color="volcano">Đang điều tra</Tag>
+              </Space>
+            );
           }
 
           if (record.asset?.status === 'permanently_lost') {
-            return <Tag color="black">Đã báo mất</Tag>;
+            return (
+              <Space size="small" wrap>
+                {detailButton}
+                <Tag color="black">Đã báo mất</Tag>
+              </Space>
+            );
           }
 
           return (
             <Space size="small" wrap>
+              {detailButton}
               <Button
                 size="small"
                 icon={<ToolOutlined />}
@@ -269,10 +363,88 @@ const BorrowHistoryPage = () => {
           );
         }
 
-        return '-';
+        return detailButton;
       },
     },
   ];
+
+  const renderHistoryDetailModal = () => {
+    if (!viewingHistory) {
+      return null;
+    }
+
+    const lostReport = getLostReport(viewingHistory);
+
+    return (
+      <Modal
+        title={`Chi tiết phiếu mượn ${viewingHistory.asset?.asset_code || ''}`}
+        open={!!viewingHistory}
+        onCancel={() => setViewingHistory(null)}
+        footer={<Button onClick={() => setViewingHistory(null)}>Đóng</Button>}
+        width={820}
+      >
+        <Space direction="vertical" size={16} style={{ width: '100%', marginTop: 8 }}>
+          <Row gutter={[16, 16]}>
+            <Col xs={24} md={8}>
+              {getImageUrl(viewingHistory.asset?.image_path) ? (
+                <Image
+                  src={getImageUrl(viewingHistory.asset?.image_path)}
+                  alt={viewingHistory.asset?.name || 'asset'}
+                  width="100%"
+                  height={220}
+                  style={{ objectFit: 'cover', borderRadius: 8, border: '1px solid #f0f0f0' }}
+                />
+              ) : (
+                <div style={{ height: 220, border: '1px solid #f0f0f0', borderRadius: 8, display: 'grid', placeItems: 'center', color: '#bfbfbf', background: '#fafafa' }}>
+                  <Space direction="vertical" align="center">
+                    <PictureOutlined style={{ fontSize: 28 }} />
+                    <Text type="secondary">Không có ảnh thiết bị</Text>
+                  </Space>
+                </div>
+              )}
+            </Col>
+            <Col xs={24} md={16}>
+              <Descriptions bordered size="small" column={1}>
+                <Descriptions.Item label="Mã phiếu">PM-{String(viewingHistory.id).padStart(5, '0')}</Descriptions.Item>
+                <Descriptions.Item label="Trạng thái mượn">{renderBorrowStatus(viewingHistory)}</Descriptions.Item>
+                <Descriptions.Item label="Tài sản">{viewingHistory.asset?.asset_code || '-'} - {viewingHistory.asset?.name || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Danh mục">{viewingHistory.asset?.category?.name || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Trạng thái tài sản">{renderAssetStatus(viewingHistory.asset?.status)}</Descriptions.Item>
+                <Descriptions.Item label="Ngày cấp phát">{formatDateTime(viewingHistory.assigned_at)}</Descriptions.Item>
+                <Descriptions.Item label="Ngày dự kiến trả">{formatDate(viewingHistory.expected_return_date)}</Descriptions.Item>
+                <Descriptions.Item label="Ngày xác nhận">{formatDateTime(viewingHistory.confirmed_at)}</Descriptions.Item>
+                <Descriptions.Item label="Ngày trả/đóng phiếu">{formatDateTime(viewingHistory.returned_at)}</Descriptions.Item>
+                <Descriptions.Item label="Người cấp phát">{viewingHistory.assigned_by?.name || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Người nhận lại">{viewingHistory.returned_by?.name || viewingHistory.returnedBy?.name || '-'}</Descriptions.Item>
+              </Descriptions>
+            </Col>
+          </Row>
+
+          <Card size="small" title="Ghi chú phiếu mượn">
+            <Space direction="vertical" size={8} style={{ width: '100%' }}>
+              <Text>Ghi chú cấp phát: {viewingHistory.note || '-'}</Text>
+              <Text>Lý do yêu cầu trả: {viewingHistory.return_reason || '-'}</Text>
+              <Text>Ghi chú admin khi nhận lại: {viewingHistory.return_admin_note || '-'}</Text>
+            </Space>
+          </Card>
+
+          {lostReport ? (
+            <Card size="small" title="Thông tin báo mất">
+              <Descriptions bordered size="small" column={1}>
+                <Descriptions.Item label="Mã phiếu báo mất">BM-{String(lostReport.id).padStart(5, '0')}</Descriptions.Item>
+                <Descriptions.Item label="Kết quả">{renderLostStatus(lostReport.status)}</Descriptions.Item>
+                <Descriptions.Item label="Ngày báo">{formatDateTime(lostReport.created_at)}</Descriptions.Item>
+                <Descriptions.Item label="Ngày xử lý">{formatDateTime(lostReport.resolved_at)}</Descriptions.Item>
+                <Descriptions.Item label="Người xử lý">{lostReport.handled_by?.name || lostReport.handledBy?.name || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Mô tả mất">{lostReport.description || '-'}</Descriptions.Item>
+                <Descriptions.Item label="Ghi chú admin">{lostReport.admin_note || '-'}</Descriptions.Item>
+              </Descriptions>
+            </Card>
+          ) : null}
+        </Space>
+      </Modal>
+    );
+  };
 
   return (
     <Space direction="vertical" size={20} style={{ width: '100%' }}>
@@ -369,10 +541,12 @@ const BorrowHistoryPage = () => {
           rowKey="id"
           loading={loading}
           pagination={{ pageSize: 8 }}
-          scroll={{ x: 1180 }}
+          scroll={{ x: 1380 }}
           locale={{ emptyText: <Empty description="Chưa có lịch sử mượn thiết bị" /> }}
         />
       </Card>
+
+      {renderHistoryDetailModal()}
 
       <Modal
         title={lostReportRecord ? `Báo mất ${lostReportRecord.asset?.asset_code || ''}` : 'Báo mất thiết bị'}

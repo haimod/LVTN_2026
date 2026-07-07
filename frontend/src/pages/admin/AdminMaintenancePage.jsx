@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Button, Card, Col, Empty, Form, Image, Input, InputNumber, Modal, Row, Select, Space, Table, Tag, Typography, notification } from 'antd';
-import { CheckOutlined, PictureOutlined, ReloadOutlined, ToolOutlined } from '@ant-design/icons';
+import { Button, Card, Col, Descriptions, Empty, Form, Image, Input, InputNumber, Modal, Row, Select, Space, Table, Tag, Typography, notification } from 'antd';
+import { CheckOutlined, EyeOutlined, PictureOutlined, ReloadOutlined, ToolOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import axiosInstance from '../../utils/axiosInstance';
 
@@ -51,6 +51,7 @@ const AdminMaintenancePage = ({ defaultStatus = 'pending' }) => {
     search: '',
   });
   const [completingRecord, setCompletingRecord] = useState(null);
+  const [viewingRecord, setViewingRecord] = useState(null);
   const [completeForm] = Form.useForm();
 
   const loadRecords = useCallback(async () => {
@@ -82,9 +83,15 @@ const AdminMaintenancePage = ({ defaultStatus = 'pending' }) => {
     return current;
   }, { total: 0, pending: 0, repairing: 0, done: 0 }), [records]);
 
+  const renderStatus = (status) => {
+    const current = statusMap[status] || { color: 'default', text: status || '-' };
+    return <Tag color={current.color}>{current.text}</Tag>;
+  };
+
   const handleReceive = async (record) => {
     try {
       setLoading(true);
+      setViewingRecord(null);
       await axiosInstance.patch(`/maintenance-records/${record.id}/receive`);
       notification.success({ message: 'Đã tiếp nhận xử lý bảo trì' });
       window.dispatchEvent(new Event('notifications-updated'));
@@ -98,6 +105,7 @@ const AdminMaintenancePage = ({ defaultStatus = 'pending' }) => {
 
   const openCompleteModal = (record) => {
     completeForm.resetFields();
+    setViewingRecord(null);
     setCompletingRecord(record);
   };
 
@@ -156,10 +164,7 @@ const AdminMaintenancePage = ({ defaultStatus = 'pending' }) => {
       dataIndex: 'status',
       key: 'status',
       align: 'center',
-      render: (status) => {
-        const current = statusMap[status] || { color: 'default', text: status || '-' };
-        return <Tag color={current.color}>{current.text}</Tag>;
-      },
+      render: renderStatus,
     },
     {
       title: 'Người xử lý',
@@ -182,17 +187,19 @@ const AdminMaintenancePage = ({ defaultStatus = 'pending' }) => {
       title: 'Thao tác',
       key: 'actions',
       fixed: 'right',
-      width: 170,
+      width: 280,
       render: (_, record) => {
-        if (record.status === 'pending') {
-          return <Button type="primary" icon={<ToolOutlined />} onClick={() => handleReceive(record)}>Tiếp nhận</Button>;
-        }
-
-        if (record.status === 'repairing') {
-          return <Button type="primary" icon={<CheckOutlined />} onClick={() => openCompleteModal(record)}>Đóng sửa</Button>;
-        }
-
-        return '-';
+        return (
+          <Space wrap>
+            <Button icon={<EyeOutlined />} onClick={() => setViewingRecord(record)}>Chi tiết</Button>
+            {record.status === 'pending' ? (
+              <Button type="primary" icon={<ToolOutlined />} onClick={() => handleReceive(record)}>Tiếp nhận</Button>
+            ) : null}
+            {record.status === 'repairing' ? (
+              <Button type="primary" icon={<CheckOutlined />} onClick={() => openCompleteModal(record)}>Đóng sửa</Button>
+            ) : null}
+          </Space>
+        );
       },
     },
   ];
@@ -265,10 +272,73 @@ const AdminMaintenancePage = ({ defaultStatus = 'pending' }) => {
           rowKey="id"
           loading={loading}
           pagination={{ pageSize: 8 }}
-          scroll={{ x: 1250 }}
+          scroll={{ x: 1360 }}
           locale={{ emptyText: <Empty description="Chưa có phiếu bảo trì" /> }}
         />
       </Card>
+
+      <Modal
+        title={viewingRecord ? `Chi tiết báo hỏng ${viewingRecord.asset?.asset_code || ''}` : 'Chi tiết báo hỏng'}
+        open={!!viewingRecord}
+        onCancel={() => setViewingRecord(null)}
+        footer={[
+          <Button key="close" onClick={() => setViewingRecord(null)}>Đóng</Button>,
+          viewingRecord?.status === 'pending' ? (
+            <Button key="receive" type="primary" icon={<ToolOutlined />} onClick={() => handleReceive(viewingRecord)}>
+              Tiếp nhận
+            </Button>
+          ) : null,
+          viewingRecord?.status === 'repairing' ? (
+            <Button key="complete" type="primary" icon={<CheckOutlined />} onClick={() => openCompleteModal(viewingRecord)}>
+              Đóng sửa
+            </Button>
+          ) : null,
+        ]}
+        width={820}
+      >
+        {viewingRecord ? (
+          <Space direction="vertical" size={16} style={{ width: '100%', marginTop: 8 }}>
+            <Row gutter={[16, 16]}>
+              <Col xs={24} md={8}>
+                {getImageUrl(viewingRecord.image_path) ? (
+                  <Image
+                    src={getImageUrl(viewingRecord.image_path)}
+                    alt="maintenance"
+                    width="100%"
+                    height={220}
+                    style={{ objectFit: 'cover', borderRadius: 8, border: '1px solid #f0f0f0' }}
+                  />
+                ) : (
+                  <div style={{ height: 220, border: '1px solid #f0f0f0', borderRadius: 8, display: 'grid', placeItems: 'center', color: '#bfbfbf', background: '#fafafa' }}>
+                    <Space direction="vertical" align="center">
+                      <PictureOutlined style={{ fontSize: 28 }} />
+                      <Text type="secondary">Không có ảnh minh chứng</Text>
+                    </Space>
+                  </div>
+                )}
+              </Col>
+              <Col xs={24} md={16}>
+                <Descriptions bordered size="small" column={1}>
+                  <Descriptions.Item label="Mã phiếu">BH-{String(viewingRecord.id).padStart(5, '0')}</Descriptions.Item>
+                  <Descriptions.Item label="Trạng thái">{renderStatus(viewingRecord.status)}</Descriptions.Item>
+                  <Descriptions.Item label="Tài sản">{viewingRecord.asset?.asset_code || '-'} - {viewingRecord.asset?.name || '-'}</Descriptions.Item>
+                  <Descriptions.Item label="Danh mục">{viewingRecord.asset?.category?.name || '-'}</Descriptions.Item>
+                  <Descriptions.Item label="Vị trí">{viewingRecord.asset?.department?.name || 'Kho tổng'}</Descriptions.Item>
+                  <Descriptions.Item label="Người báo">{viewingRecord.reported_by?.name || viewingRecord.reportedBy?.name || '-'}</Descriptions.Item>
+                  <Descriptions.Item label="Phòng ban người báo">{viewingRecord.reported_by?.department?.name || viewingRecord.reportedBy?.department?.name || '-'}</Descriptions.Item>
+                  <Descriptions.Item label="Ngày báo">{formatDateTime(viewingRecord.created_at)}</Descriptions.Item>
+                  <Descriptions.Item label="Người xử lý">{viewingRecord.handled_by?.name || viewingRecord.handledBy?.name || '-'}</Descriptions.Item>
+                  <Descriptions.Item label="Ngày hoàn tất">{formatDateTime(viewingRecord.repaired_at)}</Descriptions.Item>
+                  <Descriptions.Item label="Chi phí">{viewingRecord.repair_cost !== null && viewingRecord.repair_cost !== undefined ? Number(viewingRecord.repair_cost).toLocaleString('vi-VN') : '-'}</Descriptions.Item>
+                </Descriptions>
+              </Col>
+            </Row>
+            <Card size="small" title="Mô tả lỗi">
+              <Text>{viewingRecord.description || '-'}</Text>
+            </Card>
+          </Space>
+        ) : null}
+      </Modal>
 
       <Modal
         title={completingRecord ? `Đóng sửa ${completingRecord.asset?.asset_code || ''}` : 'Đóng phiếu bảo trì'}

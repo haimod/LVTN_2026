@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Alert, Button, Card, Col, Form, Input, Modal, notification, Row, Select, Space, Table, Tag, Typography } from 'antd';
-import { CheckOutlined, CloseOutlined, ReloadOutlined } from '@ant-design/icons';
+import { Alert, Button, Card, Col, Descriptions, Form, Input, Modal, notification, Row, Select, Space, Table, Tag, Typography } from 'antd';
+import { CheckOutlined, CloseOutlined, EyeOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import axiosInstance from '../../utils/axiosInstance';
 
@@ -16,6 +16,7 @@ const statusMap = {
 };
 
 const formatDateTime = (value) => (value ? dayjs(value).format('DD/MM/YYYY HH:mm') : '-');
+const formatDate = (value) => (value ? dayjs(value).format('DD/MM/YYYY') : '-');
 
 const getCurrentUser = () => {
   try {
@@ -36,6 +37,7 @@ const ManagerApprovalPage = () => {
   const [statusFilter, setStatusFilter] = useState('pending');
   const [reloadKey, setReloadKey] = useState(0);
   const [rejectingRequest, setRejectingRequest] = useState(null);
+  const [viewingRequest, setViewingRequest] = useState(null);
   const [form] = Form.useForm();
 
   useEffect(() => {
@@ -60,7 +62,7 @@ const ManagerApprovalPage = () => {
         }
       } catch {
         if (!ignore) {
-          notification.error({ message: 'Không thể tải danh sách yêu cầu' });
+          notification.error({ title: 'Không thể tải danh sách yêu cầu' });
         }
       } finally {
         if (!ignore) {
@@ -93,11 +95,11 @@ const ManagerApprovalPage = () => {
           await axiosInstance.patch(`/assignment-requests/${record.id}/manager-approve`, {
             manager_note: null,
           });
-          notification.success({ message: 'Đã duyệt yêu cầu' });
+          notification.success({ title: 'Đã duyệt yêu cầu' });
           refreshRequests();
         } catch (error) {
           const message = error.response?.data?.message || 'Không thể duyệt yêu cầu.';
-          notification.error({ message: 'Thao tác bị chặn', description: message });
+          notification.error({ title: 'Thao tác bị chặn', description: message });
           setLoading(false);
         }
       },
@@ -114,12 +116,12 @@ const ManagerApprovalPage = () => {
       const values = await form.validateFields();
       setLoading(true);
       await axiosInstance.patch(`/assignment-requests/${rejectingRequest.id}/manager-reject`, values);
-      notification.success({ message: 'Đã từ chối yêu cầu' });
+      notification.success({ title: 'Đã từ chối yêu cầu' });
       setRejectingRequest(null);
       refreshRequests();
     } catch (error) {
       const message = error.response?.data?.message || 'Vui lòng nhập lý do từ chối hợp lệ.';
-      notification.error({ message: 'Không thể từ chối yêu cầu', description: message });
+      notification.error({ title: 'Không thể từ chối yêu cầu', description: message });
       setLoading(false);
     }
   };
@@ -153,6 +155,20 @@ const ManagerApprovalPage = () => {
       render: (_, record) => record.category?.name || '-',
     },
     {
+      title: 'Nhu cầu cụ thể',
+      dataIndex: 'requested_specification',
+      key: 'requested_specification',
+      ellipsis: true,
+      render: (value) => value || '-',
+    },
+    {
+      title: 'Dự kiến trả',
+      dataIndex: 'expected_return_date',
+      key: 'expected_return_date',
+      width: 130,
+      render: formatDate,
+    },
+    {
       title: 'Lý do',
       dataIndex: 'reason',
       key: 'reason',
@@ -178,14 +194,17 @@ const ManagerApprovalPage = () => {
       title: 'Thao tác',
       key: 'action',
       fixed: 'right',
-      width: 170,
+      width: 260,
       render: (_, record) => (
-        record.status === 'pending' ? (
-          <Space>
-            <Button type="primary" icon={<CheckOutlined />} onClick={() => handleApprove(record)}>Duyệt</Button>
-            <Button danger icon={<CloseOutlined />} onClick={() => openRejectModal(record)}>Từ chối</Button>
-          </Space>
-        ) : '-'
+        <Space wrap>
+          <Button icon={<EyeOutlined />} onClick={() => setViewingRequest(record)}>Chi tiết</Button>
+          {record.status === 'pending' ? (
+            <>
+              <Button type="primary" icon={<CheckOutlined />} onClick={() => handleApprove(record)}>Duyệt</Button>
+              <Button danger icon={<CloseOutlined />} onClick={() => openRejectModal(record)}>Từ chối</Button>
+            </>
+          ) : null}
+        </Space>
       ),
     },
   ];
@@ -235,9 +254,75 @@ const ManagerApprovalPage = () => {
           rowKey="id"
           loading={loading}
           pagination={{ pageSize: 8 }}
-          scroll={{ x: 1100 }}
+          scroll={{ x: 1430 }}
         />
       </Card> : null}
+
+      <Modal
+        title={viewingRequest ? `Chi tiết YC-${String(viewingRequest.id).padStart(5, '0')}` : 'Chi tiết yêu cầu'}
+        open={!!viewingRequest}
+        onCancel={() => setViewingRequest(null)}
+        footer={[
+          <Button key="close" onClick={() => setViewingRequest(null)}>Đóng</Button>,
+          viewingRequest?.status === 'pending' ? (
+            <Button
+              key="approve"
+              type="primary"
+              icon={<CheckOutlined />}
+              onClick={() => {
+                const request = viewingRequest;
+                setViewingRequest(null);
+                handleApprove(request);
+              }}
+            >
+              Duyệt
+            </Button>
+          ) : null,
+          viewingRequest?.status === 'pending' ? (
+            <Button
+              key="reject"
+              danger
+              icon={<CloseOutlined />}
+              onClick={() => {
+                const request = viewingRequest;
+                setViewingRequest(null);
+                openRejectModal(request);
+              }}
+            >
+              Từ chối
+            </Button>
+          ) : null,
+        ]}
+        width={720}
+      >
+        {viewingRequest ? (
+          <Space direction="vertical" size={16} style={{ width: '100%', marginTop: 8 }}>
+            <Descriptions bordered size="small" column={1}>
+              <Descriptions.Item label="Mã yêu cầu">YC-{String(viewingRequest.id).padStart(5, '0')}</Descriptions.Item>
+              <Descriptions.Item label="Trạng thái">
+                {(() => {
+                  const current = statusMap[viewingRequest.status] || { color: 'default', text: viewingRequest.status || '-' };
+                  return <Tag color={current.color}>{current.text}</Tag>;
+                })()}
+              </Descriptions.Item>
+              <Descriptions.Item label="Nhân viên">{viewingRequest.requester?.name || '-'}</Descriptions.Item>
+              <Descriptions.Item label="Email">{viewingRequest.requester?.email || '-'}</Descriptions.Item>
+              <Descriptions.Item label="Phòng ban">{viewingRequest.requester?.department?.name || '-'}</Descriptions.Item>
+              <Descriptions.Item label="Danh mục thiết bị">{viewingRequest.category?.name || '-'}</Descriptions.Item>
+              <Descriptions.Item label="Thiết bị/cấu hình mong muốn">{viewingRequest.requested_specification || '-'}</Descriptions.Item>
+              <Descriptions.Item label="Ngày dự kiến trả">{formatDate(viewingRequest.expected_return_date)}</Descriptions.Item>
+              <Descriptions.Item label="Lý do mượn">{viewingRequest.reason || '-'}</Descriptions.Item>
+              <Descriptions.Item label="Ngày gửi">{formatDateTime(viewingRequest.created_at)}</Descriptions.Item>
+              <Descriptions.Item label="Trưởng phòng xử lý">{viewingRequest.manager?.name || '-'}</Descriptions.Item>
+              <Descriptions.Item label="Thời điểm trưởng phòng xử lý">{formatDateTime(viewingRequest.manager_at)}</Descriptions.Item>
+              <Descriptions.Item label="Ghi chú trưởng phòng">{viewingRequest.manager_note || '-'}</Descriptions.Item>
+              <Descriptions.Item label="Admin xử lý">{viewingRequest.admin?.name || '-'}</Descriptions.Item>
+              <Descriptions.Item label="Thời điểm admin xử lý">{formatDateTime(viewingRequest.admin_at)}</Descriptions.Item>
+              <Descriptions.Item label="Ghi chú admin">{viewingRequest.admin_note || '-'}</Descriptions.Item>
+            </Descriptions>
+          </Space>
+        ) : null}
+      </Modal>
 
       <Modal
         title={rejectingRequest ? `Từ chối YC-${String(rejectingRequest.id).padStart(5, '0')}` : 'Từ chối yêu cầu'}

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Button, Card, Col, Form, Input, Modal, notification, Row, Select, Space, Table, Tag, Typography } from 'antd';
-import { CheckOutlined, ClockCircleOutlined, CloseOutlined, ReloadOutlined } from '@ant-design/icons';
+import { Button, Card, Col, Descriptions, Form, Input, Modal, notification, Row, Select, Space, Table, Tag, Typography } from 'antd';
+import { CheckOutlined, ClockCircleOutlined, CloseOutlined, EyeOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import axiosInstance from '../../utils/axiosInstance';
 
@@ -16,6 +16,7 @@ const statusMap = {
 };
 
 const formatDateTime = (value) => (value ? dayjs(value).format('DD/MM/YYYY HH:mm') : '-');
+const formatDate = (value) => (value ? dayjs(value).format('DD/MM/YYYY') : '-');
 
 const isManagerRequest = (record) => (
   String(record.manager_id || '') === String(record.requester_id || '')
@@ -24,6 +25,7 @@ const isManagerRequest = (record) => (
 
 const AdminBorrowRequestPage = () => {
   const [requests, setRequests] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [availableAssets, setAvailableAssets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [assetLoading, setAssetLoading] = useState(false);
@@ -32,6 +34,7 @@ const AdminBorrowRequestPage = () => {
   const [fulfillingRequest, setFulfillingRequest] = useState(null);
   const [rejectingRequest, setRejectingRequest] = useState(null);
   const [outOfStockRequest, setOutOfStockRequest] = useState(null);
+  const [viewingRequest, setViewingRequest] = useState(null);
   const [fulfillForm] = Form.useForm();
   const [rejectForm] = Form.useForm();
   const [outOfStockForm] = Form.useForm();
@@ -72,18 +75,13 @@ const AdminBorrowRequestPage = () => {
     setReloadKey((current) => current + 1);
   };
 
-  const openFulfillModal = async (record) => {
-    setFulfillingRequest(record);
-    fulfillForm.resetFields();
-    setAvailableAssets([]);
-    setAssetLoading(true);
-
+  const fetchAvailableAssets = async (categoryId) => {
     try {
+      setAssetLoading(true);
       const response = await axiosInstance.get('/assets', {
         params: {
-          category_id: record.category_id,
           status: 'new',
-          department_id: 'warehouse',
+          ...(categoryId ? { category_id: categoryId } : {}),
         },
       });
       const data = response.data.data ? response.data.data : response.data;
@@ -93,6 +91,30 @@ const AdminBorrowRequestPage = () => {
     } finally {
       setAssetLoading(false);
     }
+  };
+
+  const loadCategories = async () => {
+    try {
+      const response = await axiosInstance.get('/categories');
+      const data = response.data.data ? response.data.data : response.data;
+      setCategories(Array.isArray(data) ? data : []);
+    } catch {
+      notification.error({ message: 'Không thể tải danh mục thiết bị' });
+    }
+  };
+
+  const openFulfillModal = async (record) => {
+    setViewingRequest(null);
+    setFulfillingRequest(record);
+    fulfillForm.resetFields();
+    fulfillForm.setFieldsValue({ fulfill_category_id: record.category_id });
+    setAvailableAssets([]);
+
+    if (!categories.length) {
+      loadCategories();
+    }
+
+    fetchAvailableAssets(record.category_id);
   };
 
   const handleFulfill = async () => {
@@ -112,11 +134,13 @@ const AdminBorrowRequestPage = () => {
 
   const openRejectModal = (record) => {
     rejectForm.resetFields();
+    setViewingRequest(null);
     setRejectingRequest(record);
   };
 
   const openOutOfStockModal = (record) => {
     outOfStockForm.resetFields();
+    setViewingRequest(null);
     setOutOfStockRequest(record);
   };
 
@@ -148,6 +172,11 @@ const AdminBorrowRequestPage = () => {
       notification.error({ message: 'Không thể chuyển trạng thái', description: message });
       setLoading(false);
     }
+  };
+
+  const renderStatus = (status) => {
+    const current = statusMap[status] || { color: 'default', text: status || '-' };
+    return <Tag color={current.color}>{current.text}</Tag>;
   };
 
   const columns = [
@@ -184,6 +213,20 @@ const AdminBorrowRequestPage = () => {
       render: (_, record) => record.category?.name || '-',
     },
     {
+      title: 'Nhu cầu cụ thể',
+      dataIndex: 'requested_specification',
+      key: 'requested_specification',
+      ellipsis: true,
+      render: (value) => value || '-',
+    },
+    {
+      title: 'Dự kiến trả',
+      dataIndex: 'expected_return_date',
+      key: 'expected_return_date',
+      width: 130,
+      render: formatDate,
+    },
+    {
       title: 'Lý do',
       dataIndex: 'reason',
       key: 'reason',
@@ -194,10 +237,7 @@ const AdminBorrowRequestPage = () => {
       dataIndex: 'status',
       key: 'status',
       align: 'center',
-      render: (status) => {
-        const current = statusMap[status] || { color: 'default', text: status || '-' };
-        return <Tag color={current.color}>{current.text}</Tag>;
-      },
+      render: renderStatus,
     },
     {
       title: 'Trưởng phòng duyệt',
@@ -219,19 +259,20 @@ const AdminBorrowRequestPage = () => {
       title: 'Thao tác',
       key: 'action',
       fixed: 'right',
-      width: 280,
+      width: 380,
       render: (_, record) => (
-        ['mgr_approved', 'out_of_stock'].includes(record.status) ? (
-          <Space>
+        <Space wrap>
+          <Button icon={<EyeOutlined />} onClick={() => setViewingRequest(record)}>Chi tiết</Button>
+          {['mgr_approved', 'out_of_stock'].includes(record.status) ? (
             <Button type="primary" icon={<CheckOutlined />} onClick={() => openFulfillModal(record)}>Cấp phát</Button>
-            {record.status === 'mgr_approved' ? (
-              <>
-                <Button icon={<ClockCircleOutlined />} onClick={() => openOutOfStockModal(record)}>Chờ kho</Button>
-                <Button danger icon={<CloseOutlined />} onClick={() => openRejectModal(record)}>Từ chối</Button>
-              </>
-            ) : null}
-          </Space>
-        ) : '-'
+          ) : null}
+          {record.status === 'mgr_approved' ? (
+            <>
+              <Button icon={<ClockCircleOutlined />} onClick={() => openOutOfStockModal(record)}>Chờ kho</Button>
+              <Button danger icon={<CloseOutlined />} onClick={() => openRejectModal(record)}>Từ chối</Button>
+            </>
+          ) : null}
+        </Space>
       ),
     },
   ];
@@ -272,9 +313,76 @@ const AdminBorrowRequestPage = () => {
           rowKey="id"
           loading={loading}
           pagination={{ pageSize: 8 }}
-          scroll={{ x: 1200 }}
+          scroll={{ x: 1580 }}
         />
       </Card>
+
+      <Modal
+        title={viewingRequest ? `Chi tiết YC-${String(viewingRequest.id).padStart(5, '0')}` : 'Chi tiết yêu cầu'}
+        open={!!viewingRequest}
+        onCancel={() => setViewingRequest(null)}
+        footer={[
+          <Button key="close" onClick={() => setViewingRequest(null)}>Đóng</Button>,
+          ['mgr_approved', 'out_of_stock'].includes(viewingRequest?.status) ? (
+            <Button
+              key="fulfill"
+              type="primary"
+              icon={<CheckOutlined />}
+              onClick={() => openFulfillModal(viewingRequest)}
+            >
+              Cấp phát
+            </Button>
+          ) : null,
+          viewingRequest?.status === 'mgr_approved' ? (
+            <Button
+              key="out-of-stock"
+              icon={<ClockCircleOutlined />}
+              onClick={() => openOutOfStockModal(viewingRequest)}
+            >
+              Chờ kho
+            </Button>
+          ) : null,
+          viewingRequest?.status === 'mgr_approved' ? (
+            <Button
+              key="reject"
+              danger
+              icon={<CloseOutlined />}
+              onClick={() => openRejectModal(viewingRequest)}
+            >
+              Từ chối
+            </Button>
+          ) : null,
+        ]}
+        width={760}
+      >
+        {viewingRequest ? (
+          <Space direction="vertical" size={16} style={{ width: '100%', marginTop: 8 }}>
+            <Descriptions bordered size="small" column={1}>
+              <Descriptions.Item label="Mã yêu cầu">YC-{String(viewingRequest.id).padStart(5, '0')}</Descriptions.Item>
+              <Descriptions.Item label="Loại đơn">
+                {isManagerRequest(viewingRequest)
+                  ? <Tag color="purple">Cấp quản lý</Tag>
+                  : <Tag color="cyan">Nhân viên</Tag>}
+              </Descriptions.Item>
+              <Descriptions.Item label="Trạng thái">{renderStatus(viewingRequest.status)}</Descriptions.Item>
+              <Descriptions.Item label="Người yêu cầu">{viewingRequest.requester?.name || '-'}</Descriptions.Item>
+              <Descriptions.Item label="Email">{viewingRequest.requester?.email || '-'}</Descriptions.Item>
+              <Descriptions.Item label="Phòng ban">{viewingRequest.requester?.department?.name || '-'}</Descriptions.Item>
+              <Descriptions.Item label="Danh mục thiết bị">{viewingRequest.category?.name || '-'}</Descriptions.Item>
+              <Descriptions.Item label="Thiết bị/cấu hình mong muốn">{viewingRequest.requested_specification || '-'}</Descriptions.Item>
+              <Descriptions.Item label="Ngày dự kiến trả">{formatDate(viewingRequest.expected_return_date)}</Descriptions.Item>
+              <Descriptions.Item label="Lý do mượn">{viewingRequest.reason || '-'}</Descriptions.Item>
+              <Descriptions.Item label="Ngày gửi">{formatDateTime(viewingRequest.created_at)}</Descriptions.Item>
+              <Descriptions.Item label="Trưởng phòng xử lý">{viewingRequest.manager?.name || '-'}</Descriptions.Item>
+              <Descriptions.Item label="Thời điểm trưởng phòng xử lý">{formatDateTime(viewingRequest.manager_at)}</Descriptions.Item>
+              <Descriptions.Item label="Ghi chú trưởng phòng">{viewingRequest.manager_note || '-'}</Descriptions.Item>
+              <Descriptions.Item label="Admin xử lý">{viewingRequest.admin?.name || '-'}</Descriptions.Item>
+              <Descriptions.Item label="Thời điểm admin xử lý">{formatDateTime(viewingRequest.admin_at)}</Descriptions.Item>
+              <Descriptions.Item label="Ghi chú admin">{viewingRequest.admin_note || '-'}</Descriptions.Item>
+            </Descriptions>
+          </Space>
+        ) : null}
+      </Modal>
 
       <Modal
         title={fulfillingRequest ? `Cấp phát YC-${String(fulfillingRequest.id).padStart(5, '0')}` : 'Cấp phát thiết bị'}
@@ -291,6 +399,33 @@ const AdminBorrowRequestPage = () => {
             <Input value={fulfillingRequest?.category?.name || '-'} disabled />
           </Form.Item>
 
+          <Form.Item label="Thiết bị/cấu hình mong muốn">
+            <Input.TextArea value={fulfillingRequest?.requested_specification || '-'} disabled autoSize={{ minRows: 2, maxRows: 4 }} />
+          </Form.Item>
+
+          <Form.Item label="Ngày dự kiến trả">
+            <Input value={formatDate(fulfillingRequest?.expected_return_date)} disabled />
+          </Form.Item>
+
+          <Form.Item
+            name="fulfill_category_id"
+            label="Danh mục cấp phát thực tế"
+            extra="Nếu user chọn nhầm danh mục, chọn lại danh mục đúng tại đây rồi chọn tài sản phù hợp."
+          >
+            <Select
+              allowClear
+              placeholder="Chọn danh mục để lọc tài sản"
+              options={categories.map((category) => ({
+                value: category.id,
+                label: category.name,
+              }))}
+              onChange={(value) => {
+                fulfillForm.setFieldsValue({ asset_id: undefined });
+                fetchAvailableAssets(value);
+              }}
+            />
+          </Form.Item>
+
           <Form.Item
             name="asset_id"
             label="Thiết bị còn trống"
@@ -303,9 +438,9 @@ const AdminBorrowRequestPage = () => {
               optionFilterProp="label"
               options={availableAssets.map((asset) => ({
                 value: asset.id,
-                label: `${asset.asset_code} - ${asset.name}`,
+                label: `${asset.asset_code} - ${asset.name} (${asset.department?.name || 'Kho tổng'})`,
               }))}
-              notFoundContent={assetLoading ? 'Đang tải...' : 'Không có thiết bị còn trống'}
+              notFoundContent={assetLoading ? 'Đang tải...' : 'Không có thiết bị còn trống theo bộ lọc đang chọn'}
             />
           </Form.Item>
 

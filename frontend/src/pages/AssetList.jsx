@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Table, Button, Space, Modal, Form, Input, Select, notification, Popconfirm, Card, Row, Col, Tag, DatePicker, InputNumber, Upload, Image, QRCode, Descriptions, Timeline, Tooltip, Typography } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, ReloadOutlined, UploadOutlined, PictureOutlined, QrcodeOutlined, HistoryOutlined, StopOutlined, DownloadOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, ReloadOutlined, UploadOutlined, PictureOutlined, QrcodeOutlined, HistoryOutlined, StopOutlined, DownloadOutlined, EyeOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import axiosInstance from '../utils/axiosInstance';
 import { downloadBlobResponse } from '../utils/downloadFile';
@@ -32,6 +32,11 @@ const eventTypeMap = {
 };
 
 const formatDateTime = (value) => (value ? dayjs(value).format('DD/MM/YYYY HH:mm') : '-');
+const formatDate = (value) => (value ? dayjs(value).format('DD/MM/YYYY') : '-');
+const formatCurrency = (value) => {
+  if (value === null || value === undefined || value === '') return '-';
+  return `${Number(value).toLocaleString('vi-VN')} VNĐ`;
+};
 
 const getStatusText = (status) => statusMap[status]?.text || status || '-';
 
@@ -109,6 +114,7 @@ const AssetList = () => {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingAsset, setEditingAsset] = useState(null);
+  const [detailAsset, setDetailAsset] = useState(null);
   const [qrAsset, setQrAsset] = useState(null);
   const [historyAsset, setHistoryAsset] = useState(null);
   const [assetHistories, setAssetHistories] = useState([]);
@@ -121,6 +127,7 @@ const AssetList = () => {
   const currentUser = getCurrentUser();
   const currentRole = currentUser?.role || currentUser?.roles?.[0]?.name;
   const canManageAssets = currentRole === 'admin';
+  const canViewAssetActions = currentRole === 'manager';
 
   const cleanParams = (params) => Object.fromEntries(
     Object.entries(params).filter(([, value]) => value !== null && value !== undefined && value !== '')
@@ -302,7 +309,7 @@ const AssetList = () => {
       const response = await axiosInstance.get(`/assets/${asset.id}/histories`);
       const payload = response.data.data ? response.data.data : response.data;
       setHistoryAsset(payload.asset || asset);
-      setAssetHistories(Array.isArray(payload.histories) ? payload.histories : []);
+      setAssetHistories(Array.isArray(payload.histories) ? payload.histories.slice(0, 1) : []);
     } catch (error) {
       const msg = error.response?.data?.message || 'Không thể tải lịch sử tài sản';
       notification.error({ message: 'Lỗi tải lịch sử', description: msg });
@@ -396,7 +403,7 @@ const AssetList = () => {
           <Tooltip title="Mã QR">
             <Button type="text" icon={<QrcodeOutlined style={{ color: '#1677ff' }} />} onClick={() => setQrAsset(record)} />
           </Tooltip>
-          <Tooltip title="Lịch sử tài sản">
+          <Tooltip title="Lịch sử gần nhất">
             <Button type="text" icon={<HistoryOutlined style={{ color: '#13c2c2' }} />} onClick={() => openHistoryModal(record)} />
           </Tooltip>
           <Tooltip title="Thanh lý">
@@ -416,6 +423,23 @@ const AssetList = () => {
           >
             <Button type="text" danger icon={<DeleteOutlined />} disabled={!['new', 'disposed'].includes(record.status)} />
           </Popconfirm>
+        </Space>
+      ),
+    });
+  } else if (canViewAssetActions) {
+    columns.push({
+      title: 'Thao tác',
+      key: 'action',
+      align: 'center',
+      width: 170,
+      render: (_, record) => (
+        <Space size="small">
+          <Button icon={<EyeOutlined />} onClick={() => setDetailAsset(record)}>
+            Chi tiết
+          </Button>
+          <Tooltip title="Lịch sử gần nhất">
+            <Button type="text" icon={<HistoryOutlined style={{ color: '#13c2c2' }} />} onClick={() => openHistoryModal(record)} />
+          </Tooltip>
         </Space>
       ),
     });
@@ -633,6 +657,40 @@ const AssetList = () => {
       </Modal>
 
       <Modal
+        title={detailAsset ? `Chi tiết ${detailAsset.asset_code}` : 'Chi tiết tài sản'}
+        open={!!detailAsset}
+        onCancel={() => setDetailAsset(null)}
+        footer={<Button onClick={() => setDetailAsset(null)}>Đóng</Button>}
+        width={820}
+      >
+        {detailAsset ? (
+          <Space direction="vertical" size={16} style={{ width: '100%', marginTop: 8 }}>
+            <Descriptions bordered size="small" column={2}>
+              <Descriptions.Item label="Mã tài sản">{detailAsset.asset_code}</Descriptions.Item>
+              <Descriptions.Item label="Tên tài sản">{detailAsset.name}</Descriptions.Item>
+              <Descriptions.Item label="Danh mục">{detailAsset.category?.name || '-'}</Descriptions.Item>
+              <Descriptions.Item label="Vị trí">{detailAsset.department?.name || 'Kho tổng'}</Descriptions.Item>
+              <Descriptions.Item label="Trạng thái">{getStatusTag(detailAsset.status)}</Descriptions.Item>
+              <Descriptions.Item label="Giá mua">{formatCurrency(detailAsset.purchase_price)}</Descriptions.Item>
+              <Descriptions.Item label="Ngày mua">{formatDate(detailAsset.purchase_date)}</Descriptions.Item>
+              <Descriptions.Item label="Hạn bảo hành">{formatDate(detailAsset.warranty_expiry)}</Descriptions.Item>
+              <Descriptions.Item label="Mô tả" span={2}>{detailAsset.description || '-'}</Descriptions.Item>
+            </Descriptions>
+
+            {getImageUrl(detailAsset.image_path) ? (
+              <Image
+                width={160}
+                height={110}
+                src={getImageUrl(detailAsset.image_path)}
+                alt={detailAsset.name}
+                style={{ objectFit: 'cover', borderRadius: 6 }}
+              />
+            ) : null}
+          </Space>
+        ) : null}
+      </Modal>
+
+      <Modal
         title={disposingAsset ? `Thanh lý ${disposingAsset.asset_code}` : 'Thanh lý tài sản'}
         open={!!disposingAsset}
         onOk={handleDispose}
@@ -661,7 +719,7 @@ const AssetList = () => {
       </Modal>
 
       <Modal
-        title={historyAsset ? `Lịch sử ${historyAsset.asset_code}` : 'Lịch sử tài sản'}
+        title={historyAsset ? `Lịch sử gần nhất ${historyAsset.asset_code}` : 'Lịch sử gần nhất'}
         open={!!historyAsset}
         onCancel={() => setHistoryAsset(null)}
         footer={<Button onClick={() => setHistoryAsset(null)}>Đóng</Button>}
@@ -676,6 +734,8 @@ const AssetList = () => {
               <Descriptions.Item label="Vị trí">{historyAsset.department?.name || 'Kho tổng'}</Descriptions.Item>
               <Descriptions.Item label="Trạng thái">{getStatusTag(historyAsset.status)}</Descriptions.Item>
             </Descriptions>
+
+            <Text type="secondary">Giao diện chỉ hiển thị mốc gần nhất. File xuất Excel có toàn bộ lịch sử của tài sản.</Text>
 
             <Timeline
               pending={historyLoading ? 'Đang tải lịch sử...' : false}

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Button, Card, Col, Empty, Form, Image, Input, Modal, Row, Select, Space, Table, Tag, Typography, notification } from 'antd';
-import { CheckCircleOutlined, ExclamationCircleOutlined, PictureOutlined, ReloadOutlined } from '@ant-design/icons';
+import { Button, Card, Col, Descriptions, Empty, Form, Image, Input, Modal, Row, Select, Space, Table, Tag, Typography, notification } from 'antd';
+import { CheckCircleOutlined, ExclamationCircleOutlined, EyeOutlined, PictureOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import axiosInstance from '../../utils/axiosInstance';
 
@@ -11,6 +11,16 @@ const statusMap = {
   pending: { color: 'gold', text: 'Chờ xử lý' },
   recovered: { color: 'green', text: 'Đã tìm lại' },
   permanently_lost: { color: 'red', text: 'Mất vĩnh viễn' },
+};
+
+const assetStatusMap = {
+  new: { color: 'blue', text: 'Trong kho' },
+  in_use: { color: 'green', text: 'Đang sử dụng' },
+  waiting: { color: 'gold', text: 'Chờ bàn giao/xử lý' },
+  repairing: { color: 'orange', text: 'Đang bảo trì' },
+  under_investigation: { color: 'volcano', text: 'Đang điều tra mất' },
+  permanently_lost: { color: 'black', text: 'Mất vĩnh viễn' },
+  disposed: { color: 'default', text: 'Đã thanh lý' },
 };
 
 const resolutionOptions = [
@@ -56,6 +66,7 @@ const AdminLostReportPage = ({ defaultStatus = 'pending' }) => {
     search: '',
   });
   const [resolvingReport, setResolvingReport] = useState(null);
+  const [viewingReport, setViewingReport] = useState(null);
   const [resolveForm] = Form.useForm();
 
   const loadReports = useCallback(async () => {
@@ -90,7 +101,18 @@ const AdminLostReportPage = ({ defaultStatus = 'pending' }) => {
   const openResolveModal = (record) => {
     resolveForm.resetFields();
     resolveForm.setFieldsValue({ resolution: 'recovered' });
+    setViewingReport(null);
     setResolvingReport(record);
+  };
+
+  const renderLostStatus = (status) => {
+    const current = statusMap[status] || { color: 'default', text: status || '-' };
+    return <Tag color={current.color}>{current.text}</Tag>;
+  };
+
+  const renderAssetStatus = (status) => {
+    const current = assetStatusMap[status] || { color: 'default', text: status || '-' };
+    return <Tag color={current.color}>{current.text}</Tag>;
   };
 
   const handleResolve = async () => {
@@ -101,6 +123,7 @@ const AdminLostReportPage = ({ defaultStatus = 'pending' }) => {
       notification.success({ message: 'Đã xử lý phiếu báo mất' });
       window.dispatchEvent(new Event('notifications-updated'));
       setResolvingReport(null);
+      setViewingReport(null);
       loadReports();
     } catch (error) {
       const message = error.response?.data?.message || 'Không thể xử lý phiếu báo mất';
@@ -148,10 +171,7 @@ const AdminLostReportPage = ({ defaultStatus = 'pending' }) => {
       dataIndex: 'status',
       key: 'status',
       align: 'center',
-      render: (status) => {
-        const current = statusMap[status] || { color: 'default', text: status || '-' };
-        return <Tag color={current.color}>{current.text}</Tag>;
-      },
+      render: renderLostStatus,
     },
     {
       title: 'Người xử lý',
@@ -181,16 +201,19 @@ const AdminLostReportPage = ({ defaultStatus = 'pending' }) => {
       title: 'Thao tác',
       key: 'actions',
       fixed: 'right',
-      width: 150,
+      width: 220,
       render: (_, record) => {
-        if (record.status !== 'pending') {
-          return '-';
-        }
-
         return (
-          <Button type="primary" icon={<CheckCircleOutlined />} onClick={() => openResolveModal(record)}>
+          <Space wrap>
+            <Button icon={<EyeOutlined />} onClick={() => setViewingReport(record)}>
+              Chi tiết
+            </Button>
+            {record.status === 'pending' ? (
+              <Button type="primary" icon={<CheckCircleOutlined />} onClick={() => openResolveModal(record)}>
             Xử lý
-          </Button>
+              </Button>
+            ) : null}
+          </Space>
         );
       },
     },
@@ -268,6 +291,69 @@ const AdminLostReportPage = ({ defaultStatus = 'pending' }) => {
           locale={{ emptyText: <Empty description="Chưa có phiếu báo mất" /> }}
         />
       </Card>
+
+      <Modal
+        title={viewingReport ? `Chi tiết báo mất ${viewingReport.asset?.asset_code || ''}` : 'Chi tiết báo mất'}
+        open={!!viewingReport}
+        onCancel={() => setViewingReport(null)}
+        footer={[
+          <Button key="close" onClick={() => setViewingReport(null)}>Đóng</Button>,
+          viewingReport?.status === 'pending' ? (
+            <Button key="resolve" type="primary" icon={<CheckCircleOutlined />} onClick={() => openResolveModal(viewingReport)}>
+              Xử lý
+            </Button>
+          ) : null,
+        ]}
+        width={820}
+      >
+        {viewingReport ? (
+          <Space direction="vertical" size={16} style={{ width: '100%', marginTop: 8 }}>
+            <Row gutter={[16, 16]}>
+              <Col xs={24} md={8}>
+                {getImageUrl(viewingReport.asset?.image_path) ? (
+                  <Image
+                    src={getImageUrl(viewingReport.asset?.image_path)}
+                    alt={viewingReport.asset?.name || 'asset'}
+                    width="100%"
+                    height={220}
+                    style={{ objectFit: 'cover', borderRadius: 8, border: '1px solid #f0f0f0' }}
+                  />
+                ) : (
+                  <div style={{ height: 220, border: '1px solid #f0f0f0', borderRadius: 8, display: 'grid', placeItems: 'center', color: '#bfbfbf', background: '#fafafa' }}>
+                    <Space direction="vertical" align="center">
+                      <PictureOutlined style={{ fontSize: 28 }} />
+                      <Text type="secondary">Không có ảnh thiết bị</Text>
+                    </Space>
+                  </div>
+                )}
+              </Col>
+              <Col xs={24} md={16}>
+                <Descriptions bordered size="small" column={1}>
+                  <Descriptions.Item label="Mã phiếu">BM-{String(viewingReport.id).padStart(5, '0')}</Descriptions.Item>
+                  <Descriptions.Item label="Kết quả">{renderLostStatus(viewingReport.status)}</Descriptions.Item>
+                  <Descriptions.Item label="Tài sản">{viewingReport.asset?.asset_code || '-'} - {viewingReport.asset?.name || '-'}</Descriptions.Item>
+                  <Descriptions.Item label="Danh mục">{viewingReport.asset?.category?.name || '-'}</Descriptions.Item>
+                  <Descriptions.Item label="Trạng thái tài sản">{renderAssetStatus(viewingReport.asset?.status)}</Descriptions.Item>
+                  <Descriptions.Item label="Người báo">{viewingReport.reported_by?.name || viewingReport.reportedBy?.name || '-'}</Descriptions.Item>
+                  <Descriptions.Item label="Phòng ban người báo">{viewingReport.reported_by?.department?.name || viewingReport.reportedBy?.department?.name || '-'}</Descriptions.Item>
+                  <Descriptions.Item label="Ngày báo">{formatDateTime(viewingReport.created_at)}</Descriptions.Item>
+                  <Descriptions.Item label="Người xử lý">{viewingReport.handled_by?.name || viewingReport.handledBy?.name || '-'}</Descriptions.Item>
+                  <Descriptions.Item label="Ngày xử lý">{formatDateTime(viewingReport.resolved_at)}</Descriptions.Item>
+                  <Descriptions.Item label="Phiếu mượn">{viewingReport.assignment?.id ? `PM-${String(viewingReport.assignment.id).padStart(5, '0')}` : '-'}</Descriptions.Item>
+                </Descriptions>
+              </Col>
+            </Row>
+
+            <Card size="small" title="Mô tả mất">
+              <Text>{viewingReport.description || '-'}</Text>
+            </Card>
+
+            <Card size="small" title="Ghi chú xử lý của admin">
+              <Text>{viewingReport.admin_note || '-'}</Text>
+            </Card>
+          </Space>
+        ) : null}
+      </Modal>
 
       <Modal
         title={resolvingReport ? `Xử lý báo mất ${resolvingReport.asset?.asset_code || ''}` : 'Xử lý báo mất'}
